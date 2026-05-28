@@ -55,6 +55,18 @@ const gt = {
   getMrDiff: (iid: number) => ipcRenderer.invoke('mrs:diff', iid),
   openExternal: (url: string) => ipcRenderer.invoke('open:external', url),
 
+  notes: {
+    read: (scope: 'repo' | 'global') => ipcRenderer.invoke('notes:read', scope),
+    write: (scope: 'repo' | 'global', content: string) =>
+      ipcRenderer.invoke('notes:write', scope, content),
+  },
+  files: {
+    list: (rel: string) => ipcRenderer.invoke('files:list', rel),
+    read: (rel: string) => ipcRenderer.invoke('files:read', rel),
+    write: (rel: string, content: string) => ipcRenderer.invoke('files:write', rel, content),
+    search: (q: string) => ipcRenderer.invoke('files:search', q),
+  },
+
   // fires the instant the attached session's transcript changes
   onTick: (cb: () => void) => {
     const h = () => cb()

@@ -10,6 +10,8 @@ import { listCommandWidgets, runCommand } from './widgets'
 import { repoRootOf, repoForCwd } from './repo'
 import { listTickets, getTicket, createTicket, type NewTicket } from './backlog'
 import { listMrs, getMr, getMrDiff } from './mrs'
+import { readNotes, writeNotes, type NotesScope } from './notes'
+import { listDir, readFile, writeFile, searchRepo } from './files'
 
 const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
@@ -190,6 +192,21 @@ ipcMain.handle('mrs:list', () => listMrs(repoRootOf(pinned.cwd)))
 ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(pinned.cwd), iid))
 ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(pinned.cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
+
+// ---- notes (repo-bound + global, persisted) ----
+ipcMain.handle('notes:read', (_e, scope: NotesScope) => readNotes(scope, repoRootOf(pinned.cwd)))
+ipcMain.handle('notes:write', (_e, scope: NotesScope, content: string) =>
+  writeNotes(scope, content, repoRootOf(pinned.cwd)),
+)
+
+// ---- files (Cursor-like editor; scoped to repo root / cwd) ----
+const filesRoot = () => repoRootOf(pinned.cwd) || pinned.cwd || homedir()
+ipcMain.handle('files:list', (_e, rel: string) => listDir(filesRoot(), rel || ''))
+ipcMain.handle('files:read', (_e, rel: string) => readFile(filesRoot(), rel))
+ipcMain.handle('files:write', (_e, rel: string, content: string) =>
+  writeFile(filesRoot(), rel, content),
+)
+ipcMain.handle('files:search', (_e, q: string) => searchRepo(filesRoot(), q))
 
 app.whenReady().then(() => {
   createWindow()

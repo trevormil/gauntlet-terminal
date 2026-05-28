@@ -13,5 +13,8 @@ export default defineConfig({
   renderer: {
     root: 'src/renderer',
     plugins: [react(), tailwindcss()],
+    // CodeMirror breaks (instanceof) if @codemirror/state gets bundled more than
+    // once — force a single copy across react-codemirror + langs + search.
+    resolve: { dedupe: ['@codemirror/state'] },
   },
 })

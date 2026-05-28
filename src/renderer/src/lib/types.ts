@@ -189,7 +189,20 @@ export type GtApi = {
   getMr: (iid: number) => Promise<MrDetail | null>
   getMrDiff: (iid: number) => Promise<string>
   openExternal: (url: string) => Promise<void>
+  notes: {
+    read: (scope: 'repo' | 'global') => Promise<string>
+    write: (scope: 'repo' | 'global', content: string) => Promise<boolean>
+  }
+  files: {
+    list: (rel: string) => Promise<FileEntry[]>
+    read: (rel: string) => Promise<{ ok: boolean; content: string; reason?: string }>
+    write: (rel: string, content: string) => Promise<boolean>
+    search: (q: string) => Promise<{ file: string; line: number; text: string }[]>
+  }
 }
+
+export type FileEntry = { name: string; path: string; dir: boolean }
+export type SearchHit = { file: string; line: number; text: string }
 
 /** A full-screen tab. Auto-discovered from src/renderer/src/tabs/<id>/index.tsx. */
 export type Tab = {
