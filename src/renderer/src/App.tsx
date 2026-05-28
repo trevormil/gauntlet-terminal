@@ -32,7 +32,8 @@ export default function App() {
   const [enabled, setEnabled] = useState<string[]>(() => load('gt.enabled', []))
   const [known, setKnown] = useState<string[]>(() => load('gt.known', []))
   const [drawer, setDrawer] = useState(false)
-  const [collapsed, setCollapsed] = useState<boolean>(() => load('gt.collapsed', false))
+  // v2 key resets the stuck-collapsed state from the earlier build
+  const [collapsed, setCollapsed] = useState<boolean>(() => load('gt.cockpitCollapsed.v2', false))
 
   const allPlugins = useMemo(
     () => [...ALL_PLUGINS, ...cmdPlugins].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)),
@@ -42,7 +43,10 @@ export default function App() {
 
   useEffect(() => localStorage.setItem('gt.enabled', JSON.stringify(enabled)), [enabled])
   useEffect(() => localStorage.setItem('gt.known', JSON.stringify(known)), [known])
-  useEffect(() => localStorage.setItem('gt.collapsed', JSON.stringify(collapsed)), [collapsed])
+  useEffect(
+    () => localStorage.setItem('gt.cockpitCollapsed.v2', JSON.stringify(collapsed)),
+    [collapsed],
+  )
 
   useEffect(() => {
     const fresh = allPlugins.filter((p) => !known.includes(p.id))
@@ -156,12 +160,12 @@ export default function App() {
           {collapsed ? (
             <button
               onClick={() => setCollapsed(false)}
-              title="Expand cockpit"
-              className="flex w-8 shrink-0 cursor-pointer flex-col items-center gap-3 border-l border-[var(--gt-border)] bg-[var(--gt-bg)] pt-3 text-zinc-500 hover:text-zinc-300"
+              title="Show cockpit"
+              className="flex w-10 shrink-0 cursor-pointer flex-col items-center gap-2 border-l border-[var(--gt-border)] bg-[var(--gt-panel)] pt-3 text-zinc-400 hover:bg-white/5 hover:text-[var(--gt-accent)]"
             >
-              <span className="text-[13px]">⟨</span>
+              <span className="text-base">⧉</span>
               <span className="text-[9px] font-bold uppercase tracking-[0.2em] [writing-mode:vertical-rl]">
-                Cockpit · {active.length}
+                Cockpit · {active.length} ⟨
               </span>
             </button>
           ) : (
