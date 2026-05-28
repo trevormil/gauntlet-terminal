@@ -12,20 +12,33 @@ import {
   readSessionTasks,
   lastAssistantTurn,
 } from './data'
-import { fixPath } from './env'
+import { fixPath, detectEnv, installGtNotify } from './env'
 import { emitActivity, readActivity, clearActivity, onActivity, startActivityTail } from './events'
 import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
 import { repoRootOf, repoForCwd, gitStatus } from './repo'
 import { listTickets, getTicket, createTicket, updateTicket, type NewTicket } from './backlog'
 import { listMrs, getMr, getMrDiff, getMrCi, mergeMr, mrSummary } from './mrs'
+import { forgeFor } from './forge'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
 import { scaffoldProject } from './scaffold'
 import { readSnippets, writeSnippets, type Snippet } from './snippets'
-import { readSettings, setSetting, telegramControlEnabled, type Settings } from './settings'
-import { configureTelegramControl, markTelegramControlEnabled, pollTelegramOnce } from './telegram'
+import {
+  readSettings,
+  patchSettings,
+  telegramControlEnabled,
+  resolvedProjectsDir,
+  enginePath,
+  type SettingsPatch,
+} from './settings'
+import {
+  configureTelegramControl,
+  markTelegramControlEnabled,
+  pollTelegramOnce,
+  testTelegram,
+} from './telegram'
 import {
   readAgents,
   hasAgents as repoHasAgents,
@@ -52,7 +65,7 @@ import {
 } from './schedules'
 import { readPersonas } from './personas'
 
-const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
+const claudeBin = () => enginePath('claude')
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
 
 let win: BrowserWindow | null = null
@@ -100,7 +113,7 @@ function startSession(key: string, opts: StartOpts) {
     if (opts.name) args.push('--name', opts.name)
   }
 
-  const cmd = [CLAUDE, ...args].map(shq).join(' ')
+  const cmd = [claudeBin(), ...args].map(shq).join(' ')
   const proc = pty.spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
     name: 'xterm-256color',
     cols: opts.cols || 80,
@@ -348,8 +361,8 @@ ipcMain.handle('fleet:list', () => {
   }
   return out
 })
-ipcMain.handle('dirs:gauntlet', () => {
-  const base = join(homedir(), 'CompSci', 'gauntlet')
+ipcMain.handle('dirs:projects', () => {
+  const base = resolvedProjectsDir()
   try {
     return readdirSync(base)
       .filter((n) => !n.startsWith('.'))
@@ -381,10 +394,17 @@ ipcMain.handle('activity:list', () => readActivity())
 ipcMain.handle('activity:clear', () => clearActivity())
 ipcMain.handle('snippets:list', () => readSnippets())
 ipcMain.handle('snippets:save', (_e, list: Snippet[]) => writeSnippets(list))
+ipcMain.handle('env:detect', () => detectEnv())
+ipcMain.handle('env:install-gt-notify', () => installGtNotify())
+ipcMain.handle('telegram:test', () => testTelegram())
 ipcMain.handle('settings:get', () => readSettings())
-ipcMain.handle('settings:set', (_e, key: keyof Settings, value: boolean) => {
-  const next = setSetting(key, value)
-  if (key === 'telegramControl') markTelegramControlEnabled(value)
+ipcMain.handle('settings:patch', (_e, patch: SettingsPatch) => {
+  const before = readSettings()
+  const next = patchSettings(patch)
+  // react when the AFK-control toggle actually flips
+  if (next.telegram.control !== before.telegram.control) {
+    markTelegramControlEnabled(next.telegram.control)
+  }
   return next
 })
 ipcMain.handle('agents:list', () => readAgents(repoRootOf(cur().cwd)))
@@ -452,7 +472,7 @@ ipcMain.handle('data:usage', () => readUsage())
 ipcMain.handle('data:git-status', () => gitStatus(cur().cwd))
 ipcMain.handle('data:session-tasks', () => readSessionTasks(cur().sessionId))
 ipcMain.handle('data:mr-summary', () => mrSummary(repoRootOf(cur().cwd)))
-ipcMain.handle('data:meta', () => ({ ...cur(), claude: CLAUDE }))
+ipcMain.handle('data:meta', () => ({ ...cur(), claude: claudeBin() }))
 
 // ---- command widgets (declarative, per-repo extensible) ----
 ipcMain.handle('widgets:list', () => listCommandWidgets(cur().cwd))
@@ -462,12 +482,16 @@ ipcMain.handle('widgets:run', (_e, command: string) => runCommand(command, cur()
 ipcMain.handle('tab:context', () => {
   const repoRoot = repoRootOf(cur().cwd)
   const repo = repoForCwd(cur().cwd)
+  const forge = forgeFor(repoRoot)
   return {
     cwd: cur().cwd,
     sessionId: cur().sessionId,
     repoRoot,
     repoPath: repo?.path || '',
     repoHost: repo?.host || '',
+    forgeKind: forge.kind,
+    forgeLabel: forge.label,
+    forgeSym: forge.sym,
     hasBacklog: !!repoRoot && existsSync(join(repoRoot, 'backlog')),
     hasSessions: repoHasSessions(repoRoot),
     hasAgents: repoHasAgents(repoRoot),

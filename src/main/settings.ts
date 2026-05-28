@@ -1,29 +1,112 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
-// Tiny persisted key/value settings. Kept deliberately minimal — add a key +
-// a default here, expose it via settings:get/set, and it's available app-wide.
-export type Settings = {
-  telegram: boolean // mirror notifications to the /notify Telegram bridge (opt-in)
-  telegramControl: boolean // accept inbound commands from Telegram (AFK remote, opt-in)
+// Persisted, self-configuring app settings. Every key has a working default —
+// a fresh install (no file) runs fine, and an empty string means "resolve at
+// read time" (e.g. projectsDir → detect ~/CompSci/gauntlet else ~). Legacy
+// files in the old { telegram, telegramControl } shape are migrated on read.
+
+export type EngineId = 'codex' | 'claude'
+export type EngineCfg = { path: string } // '' = use the bare binary name on PATH
+export type ForgePref = 'auto' | 'github' | 'gitlab'
+export type TelegramCfg = {
+  notify: boolean // mirror notifications to Telegram (opt-in)
+  control: boolean // accept inbound AFK commands from Telegram (opt-in)
+  botToken: string // BotFather token → native Bot API (else falls back to scripts)
+  chatId: string // the single authorized chat (auth boundary)
 }
-const DEFAULTS: Settings = { telegram: false, telegramControl: false }
+export type Settings = {
+  onboarded: boolean
+  projectsDir: string // '' → resolved (detect ~/CompSci/gauntlet, else ~)
+  worktreesDir: string // '' → <projectsDir>/.worktrees
+  engines: Record<EngineId, EngineCfg>
+  defaultEngine: EngineId
+  forge: ForgePref // 'auto' picks gh/glab per-repo from the remote host
+  telegram: TelegramCfg
+  harnessDir: string // optional cross-repo review-artifact store
+  templateRepo: string // scaffold source
+}
+
+// A patch may carry partial nested telegram/engines without losing siblings.
+export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines'>> & {
+  telegram?: Partial<TelegramCfg>
+  engines?: Partial<Record<EngineId, Partial<EngineCfg>>>
+}
+
+const DEFAULT_TEMPLATE_REPO = 'https://github.com/trevormil/project-template'
+
+export function defaultSettings(): Settings {
+  return {
+    onboarded: false,
+    projectsDir: '',
+    worktreesDir: '',
+    engines: { codex: { path: '' }, claude: { path: '' } },
+    defaultEngine: 'codex',
+    forge: 'auto',
+    telegram: { notify: false, control: false, botToken: '', chatId: '' },
+    harnessDir: '',
+    templateRepo: '',
+  }
+}
+
+/** Coerce any on-disk shape (incl. the legacy flat booleans) into Settings. */
+export function migrate(raw: unknown): Settings {
+  const s = defaultSettings()
+  if (!raw || typeof raw !== 'object') return s
+  const r = raw as Record<string, any>
+
+  // legacy flat booleans (pre-nesting)
+  if (typeof r.telegram === 'boolean') s.telegram.notify = r.telegram
+  if (typeof r.telegramControl === 'boolean') s.telegram.control = r.telegramControl
+  // new nested telegram
+  if (r.telegram && typeof r.telegram === 'object') {
+    if (typeof r.telegram.notify === 'boolean') s.telegram.notify = r.telegram.notify
+    if (typeof r.telegram.control === 'boolean') s.telegram.control = r.telegram.control
+    if (typeof r.telegram.botToken === 'string') s.telegram.botToken = r.telegram.botToken
+    if (typeof r.telegram.chatId === 'string') s.telegram.chatId = r.telegram.chatId
+  }
+
+  if (typeof r.onboarded === 'boolean') s.onboarded = r.onboarded
+  for (const k of ['projectsDir', 'worktreesDir', 'harnessDir', 'templateRepo'] as const) {
+    if (typeof r[k] === 'string') s[k] = r[k]
+  }
+  if (r.defaultEngine === 'codex' || r.defaultEngine === 'claude') s.defaultEngine = r.defaultEngine
+  if (r.forge === 'auto' || r.forge === 'github' || r.forge === 'gitlab') s.forge = r.forge
+  if (r.engines && typeof r.engines === 'object') {
+    for (const e of ['codex', 'claude'] as EngineId[]) {
+      const p = r.engines[e]?.path
+      if (typeof p === 'string') s.engines[e] = { path: p }
+    }
+  }
+  return s
+}
+
 const FILE = join(homedir(), '.config', 'gauntlet-terminal', 'settings.json')
 
 let cache: Settings | null = null
 export function readSettings(): Settings {
   if (cache) return cache
   try {
-    cache = { ...DEFAULTS, ...(JSON.parse(readFileSync(FILE, 'utf8')) as Partial<Settings>) }
+    cache = migrate(JSON.parse(readFileSync(FILE, 'utf8')))
   } catch {
-    cache = { ...DEFAULTS }
+    cache = defaultSettings()
   }
   return cache
 }
 
-export function setSetting<K extends keyof Settings>(key: K, value: Settings[K]): Settings {
-  const next = { ...readSettings(), [key]: value }
+/** Deep-merge a patch over current settings (telegram/engines merge per-key). */
+export function patchSettings(patch: SettingsPatch): Settings {
+  const cur = readSettings()
+  const next: Settings = {
+    ...cur,
+    ...patch,
+    telegram: { ...cur.telegram, ...(patch.telegram || {}) },
+    engines: {
+      codex: { ...cur.engines.codex, ...(patch.engines?.codex || {}) },
+      claude: { ...cur.engines.claude, ...(patch.engines?.claude || {}) },
+    },
+  }
   cache = next
   try {
     mkdirSync(dirname(FILE), { recursive: true })
@@ -34,5 +117,39 @@ export function setSetting<K extends keyof Settings>(key: K, value: Settings[K])
   return next
 }
 
-export const telegramEnabled = () => readSettings().telegram
-export const telegramControlEnabled = () => readSettings().telegramControl
+// --- resolution: turn '' defaults into concrete paths ------------------------
+
+/** Pure: where worktrees live, given a settings value + a resolved projects dir. */
+export function worktreesFrom(worktreesDir: string, projectsResolved: string): string {
+  return worktreesDir || join(projectsResolved, '.worktrees')
+}
+
+export function resolvedProjectsDir(): string {
+  const s = readSettings()
+  if (s.projectsDir) return s.projectsDir
+  const legacy = join(homedir(), 'CompSci', 'gauntlet')
+  return existsSync(legacy) ? legacy : homedir()
+}
+
+export function resolvedWorktreesDir(): string {
+  return worktreesFrom(readSettings().worktreesDir, resolvedProjectsDir())
+}
+
+export function resolvedHarnessDir(): string {
+  return readSettings().harnessDir || join(homedir(), 'CompSci', 'gauntlet', 'autopilot-harness')
+}
+
+export function resolvedTemplateRepo(): string {
+  return readSettings().templateRepo || DEFAULT_TEMPLATE_REPO
+}
+
+/** The binary to invoke for an engine: explicit path > env (claude) > bare name. */
+export function enginePath(engine: EngineId): string {
+  const p = readSettings().engines[engine]?.path
+  if (p) return p
+  if (engine === 'claude' && process.env.GT_CLAUDE_BIN) return process.env.GT_CLAUDE_BIN
+  return engine
+}
+
+export const telegramNotifyEnabled = () => readSettings().telegram.notify
+export const telegramControlEnabled = () => readSettings().telegram.control

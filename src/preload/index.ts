@@ -18,7 +18,9 @@ const gt = {
   stopSession: (key: string) => ipcRenderer.invoke('session:stop', key),
   fleet: () => ipcRenderer.invoke('fleet:list'),
   pickDir: () => ipcRenderer.invoke('dialog:pickDir'),
-  gauntletDirs: () => ipcRenderer.invoke('dirs:gauntlet'),
+  projectDirs: () => ipcRenderer.invoke('dirs:projects'),
+  detectEnv: () => ipcRenderer.invoke('env:detect'),
+  installGtNotify: () => ipcRenderer.invoke('env:install-gt-notify'),
   scaffoldProject: (name: string, parentDir?: string) =>
     ipcRenderer.invoke('project:scaffold', name, parentDir),
   isFullscreen: (): Promise<boolean> => ipcRenderer.invoke('window:is-fullscreen'),
@@ -35,7 +37,10 @@ const gt = {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    set: (key: string, value: boolean) => ipcRenderer.invoke('settings:set', key, value),
+    patch: (patch: unknown) => ipcRenderer.invoke('settings:patch', patch),
+  },
+  telegram: {
+    test: () => ipcRenderer.invoke('telegram:test'),
   },
   typeIntoActive: (text: string) => ipcRenderer.send('pty:type', text),
 

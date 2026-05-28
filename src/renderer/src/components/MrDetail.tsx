@@ -178,7 +178,7 @@ function DiffView({ diff, scope }: { diff: string; scope: string }) {
   if (files.length === 0)
     return (
       <div className="p-6 text-[12px] text-zinc-600">
-        No diff (or the harness diff hasn't been generated and glab returned empty).
+        No diff (or the harness diff hasn't been generated and the forge returned empty).
       </div>
     )
   const file = files.find((f) => (f.to || f.from || '') === selected) || files[0]
@@ -344,7 +344,7 @@ function ReviewBody({ mr }: { mr: MrDetail }) {
       {mr.reviewMd ? (
         <Markdown>{mr.reviewMd}</Markdown>
       ) : (
-        <div className="text-[12px] italic text-zinc-600">No review artifact recorded for this MR yet.</div>
+        <div className="text-[12px] italic text-zinc-600">No review artifact recorded yet.</div>
       )}
     </div>
   )
@@ -397,11 +397,15 @@ function FindingCards({ items, muted, empty }: { items: Finding[]; muted?: boole
 export function MrDetailView({
   iid,
   repoLabel,
+  label = 'MR',
+  sym = '!',
   onBack,
   onMerged,
 }: {
   iid: number
   repoLabel: string
+  label?: string
+  sym?: string
   onBack: () => void
   onMerged?: () => void
 }) {
@@ -427,11 +431,12 @@ export function MrDetailView({
   }, [view, iid]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (mr === undefined)
-    return <div className="p-6 text-[12px] text-zinc-600">Loading !{iid}…</div>
+    return <div className="p-6 text-[12px] text-zinc-600">Loading {sym}{iid}…</div>
   if (mr === null)
     return (
       <div className="p-6 text-[12px] text-zinc-600">
-        Couldn't load !{iid} (is <code className="text-zinc-400">glab</code> authenticated for this repo?)
+        Couldn't load {sym}{iid} (is <code className="text-zinc-400">{label === 'PR' ? 'gh' : 'glab'}</code>{' '}
+        authenticated for this repo?)
       </div>
     )
 
@@ -455,15 +460,17 @@ export function MrDetailView({
           className="inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-[12px] text-zinc-400 hover:bg-white/5"
         >
           <ChevronLeft size={14} strokeWidth={2} />
-          MRs
+          {label}s
         </button>
-        <span className="font-mono text-[12px] text-zinc-500">!{mr.iid}</span>
+        <span className="font-mono text-[12px] text-zinc-500">{sym}{mr.iid}</span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-100">{mr.title}</span>
         <Badge tone={stateTone(mr.state)}>{mr.state}</Badge>
         {mr.draft && <Badge tone="warn">draft</Badge>}
         <div className="flex items-center gap-1.5">
-          <PrAgentActions pr={mr} />
-          {mr.state === 'opened' && <MrMergeButton iid={mr.iid} onMerged={onMerged ?? onBack} />}
+          <PrAgentActions pr={mr} sym={sym} />
+          {mr.state === 'opened' && (
+            <MrMergeButton iid={mr.iid} sym={sym} onMerged={onMerged ?? onBack} />
+          )}
           <button
             onClick={() => window.gt.openExternal(mr.webUrl)}
             className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"

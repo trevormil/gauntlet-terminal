@@ -1,7 +1,9 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Plus, X, LayoutDashboard } from 'lucide-react'
+import { Plus, X, LayoutDashboard, Settings as SettingsIcon } from 'lucide-react'
 import { EntryScreen, type Choice } from './components/EntryScreen'
 import { FleetView } from './components/FleetView'
+import { SettingsPanel } from './components/SettingsPanel'
+import { Onboarding } from './components/Onboarding'
 import { SessionView, type Info } from './SessionView'
 import logo from './assets/logo.png'
 import type { FleetSession } from './lib/types'
@@ -54,6 +56,13 @@ export default function App() {
   const [fullscreen, setFullscreen] = useState(false)
   const [fleet, setFleet] = useState(false)
   const [fleetData, setFleetData] = useState<FleetSession[]>([])
+  const [showSettings, setShowSettings] = useState(false)
+  const [onboarded, setOnboarded] = useState<boolean | null>(null) // null = loading
+
+  // first-run gate: show onboarding until the user completes (or skips) it
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setOnboarded(s.onboarded))
+  }, [])
 
   // macOS hides the traffic lights in fullscreen — drop the 78px reserve for them
   useEffect(() => {
@@ -108,6 +117,21 @@ export default function App() {
     setSessions((s) => s.map((x) => (x.key === key ? { ...x, info } : x)))
 
   const showEntry = adding || sessions.length === 0
+
+  // hold the UI until we know onboarding state (avoids the entry screen flashing
+  // before first-run setup)
+  if (onboarded === null)
+    return (
+      <div className="flex h-full items-center justify-center bg-[var(--gt-bg)]">
+        <img src={logo} alt="" draggable={false} className="h-12 w-12 animate-pulse rounded-xl" />
+      </div>
+    )
+  if (!onboarded)
+    return (
+      <div className="h-full bg-[var(--gt-bg)]">
+        <Onboarding onDone={() => setOnboarded(true)} />
+      </div>
+    )
 
   return (
     <div className="flex h-full flex-col">
@@ -189,6 +213,14 @@ export default function App() {
             Fleet
           </button>
         )}
+        <button
+          style={noDrag}
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+          className="ml-1 flex shrink-0 items-center rounded-md p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+        >
+          <SettingsIcon size={14} strokeWidth={2} />
+        </button>
       </header>
 
       {/* one SessionView per session; all mounted (PTYs persist), only active visible.
@@ -235,6 +267,15 @@ export default function App() {
           </div>
         )}
       </div>
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          onRerunSetup={() => {
+            setShowSettings(false)
+            setOnboarded(false)
+          }}
+        />
+      )}
     </div>
   )
 }

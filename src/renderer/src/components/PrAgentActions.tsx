@@ -8,7 +8,7 @@ import type { Engine } from '../lib/types'
 // source branch (see runPrAgent in main/agents.ts).
 type PrLite = { iid: number; sourceBranch: string; title?: string; webUrl?: string }
 
-export function PrAgentActions({ pr }: { pr: PrLite }) {
+export function PrAgentActions({ pr, sym = '!' }: { pr: PrLite; sym?: string }) {
   const [kind, setKind] = useState<'review' | 'iterate' | null>(null)
   const [done, setDone] = useState<{ msg: string; ok: boolean } | null>(null)
 
@@ -52,7 +52,7 @@ export function PrAgentActions({ pr }: { pr: PrLite }) {
       )}
       {kind && (
         <EnginePicker
-          title={`${kind === 'review' ? 'Review' : 'Iterate'} · !${pr.iid}`}
+          title={`${kind === 'review' ? 'Review' : 'Iterate'} · ${sym}${pr.iid}`}
           onClose={() => setKind(null)}
           onPick={launch}
         />

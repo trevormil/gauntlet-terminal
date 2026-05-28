@@ -1,0 +1,48 @@
+#!/usr/bin/env bun
+// gt-notify — append one event to the Gauntlet Terminal activity feed.
+//
+// The app tails ~/.config/gauntlet-terminal/activity.jsonl, so ANY tool (a
+// skill, a CI step, a git hook) can surface in the Activity tab + notifications
+// by writing one JSON line. This is the portable, documented hook.
+//
+// Usage:
+//   gt-notify <kind> "<title>" [--detail "..."] [--repo "..."] \
+//             [--repo-root "..."] [--session "..."]
+//   kind: task-complete | ticket-filed | pr-verdict | session-start |
+//         agent-run | error | info
+//
+// NOTE: behavior-identical to GT_NOTIFY_SRC in src/main/env.ts (the app's
+// "Install gt-notify" action writes an equivalent plain-JS copy).
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+
+const args = process.argv.slice(2)
+const pos: string[] = []
+const opt: Record<string, string> = {}
+for (let i = 0; i < args.length; i++) {
+  const a = args[i]
+  if (a.startsWith('--')) opt[a.slice(2)] = args[++i] ?? ''
+  else pos.push(a)
+}
+const kind = pos[0] || 'info'
+const title = pos[1] || ''
+if (!title) {
+  console.error('usage: gt-notify <kind> "<title>" [--detail ..] [--repo ..] [--repo-root ..] [--session ..]')
+  process.exit(1)
+}
+
+const ev = {
+  id: randomUUID(),
+  ts: Date.now(),
+  kind,
+  title,
+  ...(opt.detail ? { detail: opt.detail } : {}),
+  ...(opt.repo ? { repo: opt.repo } : {}),
+  ...(opt['repo-root'] ? { repoRoot: opt['repo-root'] } : {}),
+  ...(opt.session ? { sessionId: opt.session } : {}),
+}
+const LOG = join(homedir(), '.config', 'gauntlet-terminal', 'activity.jsonl')
+mkdirSync(dirname(LOG), { recursive: true })
+appendFileSync(LOG, JSON.stringify(ev) + '\n')

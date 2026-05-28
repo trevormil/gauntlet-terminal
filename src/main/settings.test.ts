@@ -1,0 +1,75 @@
+import { test, expect, describe } from 'bun:test'
+import { migrate, defaultSettings, worktreesFrom } from './settings'
+
+describe('migrate', () => {
+  test('empty / garbage → defaults', () => {
+    expect(migrate(undefined)).toEqual(defaultSettings())
+    expect(migrate(null)).toEqual(defaultSettings())
+    expect(migrate('nope')).toEqual(defaultSettings())
+    expect(migrate(42)).toEqual(defaultSettings())
+  })
+
+  test('legacy flat booleans → nested telegram', () => {
+    const s = migrate({ telegram: true, telegramControl: true })
+    expect(s.telegram.notify).toBe(true)
+    expect(s.telegram.control).toBe(true)
+    expect(s.telegram.botToken).toBe('') // filled from defaults
+    expect(s.onboarded).toBe(false)
+  })
+
+  test('legacy false booleans preserved', () => {
+    const s = migrate({ telegram: false, telegramControl: false })
+    expect(s.telegram.notify).toBe(false)
+    expect(s.telegram.control).toBe(false)
+  })
+
+  test('new nested telegram round-trips', () => {
+    const s = migrate({
+      onboarded: true,
+      telegram: { notify: true, control: false, botToken: 'abc:123', chatId: '999' },
+    })
+    expect(s.onboarded).toBe(true)
+    expect(s.telegram).toEqual({ notify: true, control: false, botToken: 'abc:123', chatId: '999' })
+  })
+
+  test('engines + scalars', () => {
+    const s = migrate({
+      projectsDir: '/p',
+      worktreesDir: '/w',
+      defaultEngine: 'claude',
+      forge: 'github',
+      harnessDir: '/h',
+      templateRepo: 'https://x/y',
+      engines: { codex: { path: '/bin/codex' }, claude: { path: '' } },
+    })
+    expect(s.projectsDir).toBe('/p')
+    expect(s.worktreesDir).toBe('/w')
+    expect(s.defaultEngine).toBe('claude')
+    expect(s.forge).toBe('github')
+    expect(s.harnessDir).toBe('/h')
+    expect(s.templateRepo).toBe('https://x/y')
+    expect(s.engines.codex.path).toBe('/bin/codex')
+  })
+
+  test('invalid enum values fall back to defaults', () => {
+    const s = migrate({ defaultEngine: 'gpt', forge: 'bitbucket' })
+    expect(s.defaultEngine).toBe('codex')
+    expect(s.forge).toBe('auto')
+  })
+
+  test('wrong-typed fields are ignored, not coerced', () => {
+    const s = migrate({ projectsDir: 123, onboarded: 'yes', engines: { codex: { path: 5 } } })
+    expect(s.projectsDir).toBe('')
+    expect(s.onboarded).toBe(false)
+    expect(s.engines.codex.path).toBe('')
+  })
+})
+
+describe('worktreesFrom', () => {
+  test('explicit value wins', () => {
+    expect(worktreesFrom('/custom/wt', '/projects')).toBe('/custom/wt')
+  })
+  test('falls back to <projects>/.worktrees', () => {
+    expect(worktreesFrom('', '/projects')).toBe('/projects/.worktrees')
+  })
+})

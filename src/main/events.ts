@@ -15,22 +15,36 @@ import { spawn } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { telegramEnabled } from './settings'
+import { telegramNotifyEnabled, readSettings } from './settings'
+import { sendUrl } from './telegram-api'
 
-// Reuse the project-template /notify Telegram bridge for remote pings.
+// Telegram notify: native Bot API when a token+chat are configured; otherwise
+// fall back to the project-template /notify script if it's present.
 const TG_SCRIPT = join(homedir(), '.claude', 'bin', 'telegram-notify.sh')
-function tgKind(ev: ActivityEvent): string {
+function tgKind(ev: ActivityEvent): 'done' | 'blocked' | 'info' {
   if (ev.kind === 'error') return 'blocked'
   if (ev.kind === 'task-complete') return 'done'
   if (ev.kind === 'agent-run')
     return /failed|interrupted/i.test(ev.title) ? 'blocked' : /done/i.test(ev.title) ? 'done' : 'info'
   return 'info'
 }
+const KIND_EMOJI: Record<'done' | 'blocked' | 'info', string> = { done: '✅', blocked: '⛔', info: 'ℹ️' }
+
 function sendTelegram(ev: ActivityEvent) {
-  if (!telegramEnabled()) return // opt-in, off by default
-  if (!existsSync(TG_SCRIPT)) return // bridge not provisioned → skip silently
+  if (!telegramNotifyEnabled()) return // opt-in, off by default
+  const { telegram } = readSettings()
+  const msg = ev.detail ? `${ev.title} — ${ev.detail}` : ev.title
+  if (telegram.botToken && telegram.chatId) {
+    fetch(sendUrl(telegram.botToken), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: telegram.chatId, text: `${KIND_EMOJI[tgKind(ev)]} ${msg}` }),
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => {}) // best effort
+    return
+  }
+  if (!existsSync(TG_SCRIPT)) return // no native config + no script → skip silently
   try {
-    const msg = ev.detail ? `${ev.title} — ${ev.detail}` : ev.title
     spawn(TG_SCRIPT, [`--kind=${tgKind(ev)}`, msg], { stdio: 'ignore' }).unref()
   } catch {
     /* best effort */

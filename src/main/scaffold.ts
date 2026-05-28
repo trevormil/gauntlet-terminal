@@ -1,13 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { tmpdir, homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { app } from 'electron'
+import { resolvedProjectsDir, resolvedTemplateRepo } from './settings'
 
-// Spin up a new repo from project-template (github.com/trevormil/project-template).
-// In dev the template ships as a git submodule (templates/project-template); the
-// packaged app doesn't bundle it, so fall back to a shallow clone (always latest).
-const TEMPLATE_REPO = 'https://github.com/trevormil/project-template'
+// Spin up a new repo from the configured template (default:
+// github.com/trevormil/project-template). In dev the template ships as a git
+// submodule (templates/project-template); the packaged app doesn't bundle it,
+// so fall back to a shallow clone of the configured repo (always latest).
 const SKIP = new Set(['.git', '.gitmodules', 'node_modules', '.DS_Store'])
 
 export type ScaffoldResult = { ok: boolean; path?: string; error?: string }
@@ -24,7 +25,7 @@ function templateSource(): { dir: string; cleanup?: () => void } {
     return { dir: local }
   }
   const tmp = mkdtempSync(join(tmpdir(), 'gt-template-'))
-  execFileSync('git', ['clone', '--depth', '1', TEMPLATE_REPO, tmp], {
+  execFileSync('git', ['clone', '--depth', '1', resolvedTemplateRepo(), tmp], {
     stdio: 'ignore',
     timeout: 60_000,
   })
@@ -35,7 +36,7 @@ function templateSource(): { dir: string; cleanup?: () => void } {
 export function scaffoldProject(name: string, parentDir?: string): ScaffoldResult {
   const safe = name.trim().replace(/[^\w.-]/g, '-').replace(/^-+|-+$/g, '')
   if (!safe || /^\.+$/.test(safe)) return { ok: false, error: 'enter a project name' }
-  const parent = parentDir?.trim() || join(homedir(), 'CompSci', 'gauntlet')
+  const parent = parentDir?.trim() || resolvedProjectsDir()
   const dest = join(parent, safe)
   // never traverse out of / clobber: dest must be a brand-new direct child of parent
   if (resolve(dirname(dest)) !== resolve(parent)) return { ok: false, error: 'invalid name' }

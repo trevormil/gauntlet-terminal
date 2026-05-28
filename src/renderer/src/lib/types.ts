@@ -108,9 +108,35 @@ export type NewTicket = { title: string; type: string; priority: string; status:
 
 export type Snippet = { id: string; title: string; body: string }
 
-export type Settings = { telegram: boolean; telegramControl: boolean }
-
 export type Engine = 'codex' | 'claude'
+export type EngineCfg = { path: string }
+export type ForgePref = 'auto' | 'github' | 'gitlab'
+export type TelegramCfg = { notify: boolean; control: boolean; botToken: string; chatId: string }
+export type Settings = {
+  onboarded: boolean
+  projectsDir: string
+  worktreesDir: string
+  engines: Record<Engine, EngineCfg>
+  defaultEngine: Engine
+  forge: ForgePref
+  telegram: TelegramCfg
+  harnessDir: string
+  templateRepo: string
+}
+export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines'>> & {
+  telegram?: Partial<TelegramCfg>
+  engines?: Partial<Record<Engine, Partial<EngineCfg>>>
+}
+
+/** Tool/engine readiness probed by the main process (env:detect). */
+export type EnvDetect = {
+  codex: { found: boolean; path: string }
+  claude: { found: boolean; path: string }
+  gh: { found: boolean; path: string; authed: boolean }
+  glab: { found: boolean; path: string; authed: boolean }
+  tgScripts: boolean
+}
+
 export type Agent = {
   id: string
   title: string
@@ -214,6 +240,9 @@ export type TabContext = {
   repoRoot: string
   repoPath: string
   repoHost: string
+  forgeKind: 'github' | 'gitlab'
+  forgeLabel: 'PR' | 'MR'
+  forgeSym: '#' | '!'
   hasBacklog: boolean
   hasSessions: boolean
   hasAgents: boolean
@@ -282,7 +311,9 @@ export type GtApi = {
   stopSession: (key: string) => Promise<void>
   fleet: () => Promise<FleetSession[]>
   pickDir: () => Promise<string | null>
-  gauntletDirs: () => Promise<{ name: string; path: string }[]>
+  projectDirs: () => Promise<{ name: string; path: string }[]>
+  detectEnv: () => Promise<EnvDetect>
+  installGtNotify: () => Promise<{ ok: boolean; path?: string; error?: string }>
   scaffoldProject: (
     name: string,
     parentDir?: string,
@@ -295,7 +326,10 @@ export type GtApi = {
   }
   settings: {
     get: () => Promise<Settings>
-    set: (key: keyof Settings, value: boolean) => Promise<Settings>
+    patch: (patch: SettingsPatch) => Promise<Settings>
+  }
+  telegram: {
+    test: () => Promise<{ ok: boolean; error?: string }>
   }
   typeIntoActive: (text: string) => void
   agents: {
@@ -394,7 +428,13 @@ export type GtApi = {
 export type FileEntry = { name: string; path: string; dir: boolean; ignored?: boolean }
 export type SearchHit = { file: string; line: number; text: string }
 export type GitStatus = { ok: boolean; branch: string; ahead: number; behind: number; dirty: number }
-export type MrSummary = { open: number; approve: number; changes: number; needsReview: number }
+export type MrSummary = {
+  open: number
+  approve: number
+  changes: number
+  needsReview: number
+  label: string
+}
 
 /** A full-screen tab. Auto-discovered from src/renderer/src/tabs/<id>/index.tsx. */
 export type Tab = {

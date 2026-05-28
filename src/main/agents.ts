@@ -13,7 +13,9 @@ import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { emitActivity } from './events'
 import { repoForCwd } from './repo'
+import { forgeFor } from './forge'
 import { getPersona } from './personas'
+import { enginePath, resolvedWorktreesDir } from './settings'
 import { composeSteps, pipelineLabel, type Step } from './pipelines'
 
 export { listPipelines, type PipelineId } from './pipelines'
@@ -52,7 +54,6 @@ export type AgentRun = {
   output: string
 }
 
-const WORKTREES = join(homedir(), 'CompSci', 'gauntlet', '.worktrees')
 const OUTPUT_CAP = 400_000
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
 const shq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`
@@ -268,11 +269,11 @@ export function getRun(id: string): AgentRun | null {
 // login shell so $PATH has brew/local bins, and with stdin = /dev/null (else
 // they block reading "additional input from stdin" on an empty pipe).
 function buildCmd(engine: Engine, worktree: string, prompt: string): string {
+  const bin = enginePath(engine)
   if (engine === 'claude') {
-    const bin = process.env.GT_CLAUDE_BIN || 'claude'
-    return `${bin} -p ${shq(prompt)} --dangerously-skip-permissions`
+    return `${shq(bin)} -p ${shq(prompt)} --dangerously-skip-permissions`
   }
-  return `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(prompt)}`
+  return `${shq(bin)} exec -s danger-full-access -C ${shq(worktree)} ${shq(prompt)}`
 }
 
 // Pipeline definitions + composition are pure (see ./pipelines, unit-tested).
@@ -305,7 +306,7 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   // ts + random tag → unique worktree path + branch even if two runs of the
   // same agent start in the same millisecond (parallel fan-out / fast clicks).
   const tag = `${ts}-${Math.random().toString(36).slice(2, 6)}`
-  const worktree = join(WORKTREES, basename(repoRoot) || 'repo', `${spec.id}-${tag}`)
+  const worktree = join(resolvedWorktreesDir(), basename(repoRoot) || 'repo', `${spec.id}-${tag}`)
   let branch: string
   const git = (args: string[]) =>
     execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -334,7 +335,7 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   }
   const repoLabel = repoForCwd(repoRoot)?.path || basename(repoRoot)
   const baseLine = spec.prRef
-    ? `▸ on MR !${spec.prRef.iid} · branch ${branch}`
+    ? `▸ on ${forgeFor(repoRoot).label} ${forgeFor(repoRoot).sym}${spec.prRef.iid} · branch ${branch}`
     : `▸ branch ${branch} (off ${defaultBase(repoRoot)})`
   const header =
     `▸ ${spec.title} · ${spec.engine}${spec.persona ? ` · as ${spec.persona}` : ''}` +
@@ -459,23 +460,27 @@ export function runPrAgent(
   personaId?: string,
   pipelineId?: string,
 ): AgentRun | { error: string } {
-  if (!pr?.sourceBranch) return { error: 'MR has no source branch' }
-  const ref = pr.webUrl || `!${pr.iid}`
-  const ctx = `This worktree is checked out at the head of MR !${pr.iid} (${ref}${pr.title ? ` — "${pr.title}"` : ''}) on branch "${pr.sourceBranch}". After committing, push back to the MR with \`git push origin HEAD:${pr.sourceBranch}\`.`
+  if (!pr?.sourceBranch) return { error: 'PR/MR has no source branch' }
+  const f = forgeFor(repoRoot)
+  const tag = `${f.label} ${f.sym}${pr.iid}` // e.g. "PR #12" / "MR !12"
+  const noteCmd =
+    f.kind === 'github' ? `gh pr comment ${pr.iid} -b …` : `glab mr note ${pr.iid} -m …`
+  const ref = pr.webUrl || `${f.sym}${pr.iid}`
+  const ctx = `This worktree is checked out at the head of ${tag} (${ref}${pr.title ? ` — "${pr.title}"` : ''}) on branch "${pr.sourceBranch}". After committing, push back to the ${f.label} with \`git push origin HEAD:${pr.sourceBranch}\`.`
   const base: Step =
     kind === 'review'
       ? {
-          label: `review !${pr.iid}`,
-          prompt: `Do a thorough senior code review of MR !${pr.iid}. ${ctx} Inspect \`git diff\` against the target branch and \`git log\`. Evaluate correctness, security, architecture, conformance, quality, and dependencies. Post your review on the MR (\`glab mr note ${pr.iid} -m …\`). Where you find clear, safe fixes, apply them with tests, commit, and push. End with a concise verdict and the list of findings.`,
+          label: `review ${f.sym}${pr.iid}`,
+          prompt: `Do a thorough senior code review of ${tag}. ${ctx} Inspect \`git diff\` against the target branch and \`git log\`. Evaluate correctness, security, architecture, conformance, quality, and dependencies. Post your review on the ${f.label} (\`${noteCmd}\`). Where you find clear, safe fixes, apply them with tests, commit, and push. End with a concise verdict and the list of findings.`,
         }
       : {
-          label: `iterate !${pr.iid}`,
-          prompt: `Iterate on MR !${pr.iid} until it is merge-ready. ${ctx} Address open review findings and TODOs, make the test suite and build pass, and tighten edge cases — keep changes surgical. Commit and push your work. End with the final status (tests/build green?) and a short summary of what changed.`,
+          label: `iterate ${f.sym}${pr.iid}`,
+          prompt: `Iterate on ${tag} until it is merge-ready. ${ctx} Address open review findings and TODOs, make the test suite and build pass, and tighten edge cases — keep changes surgical. Commit and push your work. End with the final status (tests/build green?) and a short summary of what changed.`,
         }
   const { steps, persona, pipeline } = buildSteps(repoRoot, base, personaId, pipelineId)
   return runSpec(repoRoot, {
     id: `pr-${kind}-${pr.iid}`,
-    title: `${kind === 'review' ? 'Review' : 'Iterate'} !${pr.iid}`,
+    title: `${kind === 'review' ? 'Review' : 'Iterate'} ${f.sym}${pr.iid}`,
     steps,
     engine,
     persona,

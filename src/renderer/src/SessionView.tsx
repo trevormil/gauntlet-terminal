@@ -154,7 +154,10 @@ export function SessionView({
       <header className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--gt-border)] bg-[var(--gt-bg)] px-2 text-zinc-300">
         <div className="flex items-center gap-0.5">
           {tabPill('terminal', SquareTerminal, 'Terminal')}
-          {tabs.map((t) => tabPill(t.id, t.icon, t.title))}
+          {tabs.map((t) =>
+            // the MR/PR tab title tracks the repo's forge (Merge vs Pull requests)
+            tabPill(t.id, t.icon, t.id === 'mrs' && ctx ? `${ctx.forgeLabel}s` : t.title),
+          )}
         </div>
         <div className="flex-1" />
         {branch && (

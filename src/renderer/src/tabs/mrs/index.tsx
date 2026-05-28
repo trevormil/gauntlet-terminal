@@ -10,27 +10,34 @@ import type { Tab, Mr, TabContext } from '../../lib/types'
 function MrList({
   mrs,
   error,
+  label,
+  sym,
+  cli,
   onOpen,
   onMerged,
 }: {
   mrs: Mr[] | null
   error?: string
+  label: string
+  sym: string
+  cli: string
   onOpen: (iid: number) => void
   onMerged: () => void
 }) {
-  if (mrs === null) return <div className="p-6 text-[12px] text-zinc-600">Loading MRs from glab…</div>
+  if (mrs === null)
+    return <div className="p-6 text-[12px] text-zinc-600">Loading {label}s from {cli}…</div>
   if (error)
     return (
       <div className="p-6 text-[12px] text-amber-400">
         {error}.
         <span className="mt-1 block text-zinc-600">
-          MRs come from <span className="font-mono">glab</span> — check it's installed and{' '}
-          <span className="font-mono">glab auth status</span> is logged in for this host.
+          {label}s come from <span className="font-mono">{cli}</span> — check it's installed and{' '}
+          <span className="font-mono">{cli} auth status</span> is logged in for this host.
         </span>
       </div>
     )
   if (mrs.length === 0)
-    return <div className="p-6 text-[12px] text-zinc-600">No open MRs for this repo.</div>
+    return <div className="p-6 text-[12px] text-zinc-600">No open {label}s for this repo.</div>
   return (
     <div className="space-y-2 p-4">
       {mrs.map((m) => (
@@ -40,7 +47,7 @@ function MrList({
           className="cursor-pointer rounded-xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3 transition-colors hover:border-[var(--gt-accent)]/50 hover:bg-white/5"
         >
           <div className="flex items-start gap-2">
-            <span className="font-mono text-[12px] text-zinc-500">!{m.iid}</span>
+            <span className="font-mono text-[12px] text-zinc-500">{sym}{m.iid}</span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] text-zinc-100">
                 {m.draft && <span className="mr-1 text-amber-400">[draft]</span>}
@@ -65,8 +72,8 @@ function MrList({
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-              <PrAgentActions pr={m} />
-              {m.state === 'opened' && <MrMergeButton iid={m.iid} onMerged={onMerged} />}
+              <PrAgentActions pr={m} sym={sym} />
+              {m.state === 'opened' && <MrMergeButton iid={m.iid} sym={sym} onMerged={onMerged} />}
               <button
                 onClick={() => window.gt.openExternal(m.webUrl)}
                 className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
@@ -88,6 +95,10 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
   const [selectedMrIid, setSelectedMrIid] = useState<number | null>(null)
 
   const hasRemote = !!ctx.repoPath
+  const label = ctx.forgeLabel
+  const sym = ctx.forgeSym
+  const cli = ctx.forgeKind === 'github' ? 'gh' : 'glab'
+  const fullName = label === 'PR' ? 'Pull Requests' : 'Merge Requests'
   const refresh = () =>
     window.gt.listMrs().then((r) => {
       setMrs(r.mrs)
@@ -109,6 +120,8 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
       <MrDetailView
         iid={selectedMrIid}
         repoLabel={ctx.repoPath || 'repo'}
+        label={label}
+        sym={sym}
         onBack={() => setSelectedMrIid(null)}
         onMerged={() => {
           setSelectedMrIid(null)
@@ -122,7 +135,7 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
         <GitPullRequest size={14} strokeWidth={2} className="text-zinc-400" />
         <span className="text-[12px] font-semibold text-zinc-200">
-          Merge Requests{hasRemote && mrs ? ` (${mrs.filter((m) => m.state === 'opened').length})` : ''}
+          {fullName}{hasRemote && mrs ? ` (${mrs.filter((m) => m.state === 'opened').length})` : ''}
         </span>
         <span className="text-[11px] text-zinc-600">{ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}</span>
       </div>
@@ -133,7 +146,15 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
             <span className="font-mono">origin</span>. Local-only repos (like this one) have none.
           </div>
         ) : (
-          <MrList mrs={mrs} error={error} onOpen={setSelectedMrIid} onMerged={refresh} />
+          <MrList
+            mrs={mrs}
+            error={error}
+            label={label}
+            sym={sym}
+            cli={cli}
+            onOpen={setSelectedMrIid}
+            onMerged={refresh}
+          />
         )}
       </div>
     </div>

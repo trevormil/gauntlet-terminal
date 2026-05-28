@@ -4,23 +4,24 @@ import type { Plugin, MrSummary } from '../../lib/types'
 
 const plugin: Plugin<MrSummary> = {
   id: 'mr-summary',
-  title: 'Open MRs',
+  title: 'Open PRs / MRs',
   icon: GitPullRequest,
-  blurb: "Open MR count for the repo + review breakdown (glab, cached 60s).",
+  blurb: 'Open PR/MR count for the repo + review breakdown (gh/glab, cached 60s).',
   order: 8,
   intervalMs: 60_000,
   defaultEnabled: false,
   poll: (gt) => gt.mrSummary(),
   render: (d) => {
     if (!d) return null
+    const title = `Open ${d.label}s`
     if (d.open === 0)
       return (
-        <Card icon={GitPullRequest} title="Open MRs">
-          <Empty>No open MRs</Empty>
+        <Card icon={GitPullRequest} title={title}>
+          <Empty>No open {d.label}s</Empty>
         </Card>
       )
     return (
-      <Card icon={GitPullRequest} title="Open MRs">
+      <Card icon={GitPullRequest} title={title}>
         <div className="mb-2">
           <Big value={d.open} sub="open" />
         </div>

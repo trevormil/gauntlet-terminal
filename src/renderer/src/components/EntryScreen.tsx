@@ -53,7 +53,7 @@ export function EntryScreen({
       setSessions(s)
       if (s[0]?.cwd) setCwd(s[0].cwd)
     })
-    window.gt.gauntletDirs().then(setDirs)
+    window.gt.projectDirs().then(setDirs)
   }, [])
 
   // selecting a folder targets the new session there AND filters resume to it

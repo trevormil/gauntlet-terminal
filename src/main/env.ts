@@ -1,5 +1,8 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, execFile } from 'node:child_process'
+import { accessSync, existsSync, constants, writeFileSync, chmodSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { enginePath } from './settings'
 
 // Finder/dock-launched macOS apps inherit only a minimal PATH
 // (/usr/bin:/bin:/usr/sbin:/sbin), so Homebrew-installed CLIs (glab, gh, codex,
@@ -27,4 +30,121 @@ export function fixPath(): void {
     ...fallback,
   ].filter(Boolean)
   process.env.PATH = [...new Set(merged)].join(':')
+}
+
+// --- tool / engine readiness detection (for onboarding + Settings) -----------
+
+/** First executable named `name` on the (already PATH-fixed) PATH, or ''. */
+function which(name: string): string {
+  for (const dir of (process.env.PATH || '').split(':')) {
+    if (!dir) continue
+    const p = join(dir, name)
+    try {
+      accessSync(p, constants.X_OK)
+      return p
+    } catch {
+      /* not here */
+    }
+  }
+  return ''
+}
+
+/** Resolve a configured engine value (bare name → PATH; absolute → validate). */
+function resolveBin(nameOrPath: string): string {
+  if (nameOrPath.includes('/')) {
+    try {
+      accessSync(nameOrPath, constants.X_OK)
+      return nameOrPath
+    } catch {
+      return ''
+    }
+  }
+  return which(nameOrPath)
+}
+
+/** `<cli> auth status` exit 0 ⇒ logged in. Best-effort, short timeout. */
+function authOk(cli: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(cli, ['auth', 'status'], { timeout: 6000 }, (err) => resolve(!err))
+  })
+}
+
+export type EnvDetect = {
+  codex: { found: boolean; path: string }
+  claude: { found: boolean; path: string }
+  gh: { found: boolean; path: string; authed: boolean }
+  glab: { found: boolean; path: string; authed: boolean }
+  tgScripts: boolean
+}
+
+/** Probe which engines/forge CLIs are installed + (for forges) authenticated. */
+export async function detectEnv(): Promise<EnvDetect> {
+  const codex = resolveBin(enginePath('codex'))
+  const claude = resolveBin(enginePath('claude'))
+  const gh = which('gh')
+  const glab = which('glab')
+  const [ghAuth, glabAuth] = await Promise.all([
+    gh ? authOk(gh) : Promise.resolve(false),
+    glab ? authOk(glab) : Promise.resolve(false),
+  ])
+  return {
+    codex: { found: !!codex, path: codex },
+    claude: { found: !!claude, path: claude },
+    gh: { found: !!gh, path: gh, authed: ghAuth },
+    glab: { found: !!glab, path: glab, authed: glabAuth },
+    tgScripts: existsSync(join(homedir(), '.claude', 'bin', 'telegram-notify.sh')),
+  }
+}
+
+// The portable activity-feed hook (plain JS). Behavior-identical to the
+// committed bin/gt-notify (that file is the canonical copy / docs reference).
+const GT_NOTIFY_SRC = `#!/usr/bin/env bun
+// gt-notify — append one event to the Gauntlet Terminal activity feed.
+// Usage: gt-notify <kind> "<title>" [--detail ..] [--repo ..] [--repo-root ..] [--session ..]
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+
+const args = process.argv.slice(2)
+const pos = []
+const opt = {}
+for (let i = 0; i < args.length; i++) {
+  const a = args[i]
+  if (a.startsWith('--')) opt[a.slice(2)] = args[++i] ?? ''
+  else pos.push(a)
+}
+const kind = pos[0] || 'info'
+const title = pos[1] || ''
+if (!title) {
+  console.error('usage: gt-notify <kind> "<title>" [--detail ..] [--repo ..] [--repo-root ..] [--session ..]')
+  process.exit(1)
+}
+const ev = {
+  id: randomUUID(),
+  ts: Date.now(),
+  kind,
+  title,
+  ...(opt.detail ? { detail: opt.detail } : {}),
+  ...(opt.repo ? { repo: opt.repo } : {}),
+  ...(opt['repo-root'] ? { repoRoot: opt['repo-root'] } : {}),
+  ...(opt.session ? { sessionId: opt.session } : {}),
+}
+const LOG = join(homedir(), '.config', 'gauntlet-terminal', 'activity.jsonl')
+mkdirSync(dirname(LOG), { recursive: true })
+appendFileSync(LOG, JSON.stringify(ev) + '\\n')
+`
+
+/** Write the gt-notify hook to ~/.local/bin (on PATH for most shells). */
+export function installGtNotify(): { ok: boolean; path?: string; error?: string } {
+  try {
+    const dir = join(homedir(), '.local', 'bin')
+    mkdirSync(dir, { recursive: true })
+    const dest = join(dir, 'gt-notify')
+    writeFileSync(dest, GT_NOTIFY_SRC)
+    chmodSync(dest, 0o755)
+    return { ok: true, path: dest }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
 }

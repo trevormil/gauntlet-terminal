@@ -18,7 +18,7 @@ import {
   Layers,
   type LucideIcon,
 } from 'lucide-react'
-import type { Engine, Persona, PipelineInfo } from '../lib/types'
+import type { Engine, Persona, PipelineInfo, EnvDetect } from '../lib/types'
 import openaiLogo from '../assets/openai.svg'
 import anthropicLogo from '../assets/anthropic.svg'
 
@@ -56,10 +56,24 @@ export function EnginePicker({
   const [persona, setPersona] = useState<string | null>(null) // null = not chosen, '' = none
   const [personas, setPersonas] = useState<Persona[]>([])
   const [pipelines, setPipelines] = useState<PipelineInfo[]>([])
+  const [env, setEnv] = useState<EnvDetect | null>(null)
+  const [defaultEngine, setDefaultEngine] = useState<Engine>('codex')
   useEffect(() => {
     window.gt.agents.personas().then(setPersonas)
     window.gt.agents.pipelines().then(setPipelines)
+    window.gt.detectEnv().then(setEnv)
+    window.gt.settings.get().then((s) => setDefaultEngine(s.defaultEngine))
   }, [])
+
+  // Until detection resolves, assume available (avoids a flicker); once known,
+  // disable engines that aren't installed and auto-pick when only one exists.
+  const avail = (e: Engine) => !env || (e === 'codex' ? env.codex.found : env.claude.found)
+  useEffect(() => {
+    if (!env || engine !== null) return
+    const ok = (['codex', 'claude'] as Engine[]).filter(avail)
+    if (ok.length === 1) setEngine(ok[0])
+  }, [env]) // eslint-disable-line react-hooks/exhaustive-deps
+  const engineOrder: Engine[] = defaultEngine === 'claude' ? ['claude', 'codex'] : ['codex', 'claude']
 
   const step = engine === null ? 1 : persona === null ? 2 : 3
   const back = () => (step === 3 ? setPersona(null) : setEngine(null))
@@ -92,18 +106,32 @@ export function EnginePicker({
           <>
             <p className="mb-3 text-[11.5px] text-zinc-500">1 · Launch with which engine?</p>
             <div className="grid grid-cols-2 gap-2">
-              {(['codex', 'claude'] as Engine[]).map((e) => (
-                <button
-                  key={e}
-                  onClick={() => setEngine(e)}
-                  className="flex flex-col items-center gap-2 rounded-xl border border-[var(--gt-border)] bg-black/20 px-3 py-4 transition-colors hover:border-[var(--gt-accent)]/60 hover:bg-white/5"
-                >
-                  <img src={LOGO[e]} alt="" className="h-7 w-7" draggable={false} />
-                  <span className="text-[13px] font-semibold text-zinc-100">{e}</span>
-                  <span className="text-[10px] text-zinc-500">{VENDOR[e]}</span>
-                </button>
-              ))}
+              {engineOrder.map((e) => {
+                const ok = avail(e)
+                return (
+                  <button
+                    key={e}
+                    onClick={() => ok && setEngine(e)}
+                    disabled={!ok}
+                    title={ok ? '' : `${e} is not installed or not on PATH`}
+                    className={`flex flex-col items-center gap-2 rounded-xl border bg-black/20 px-3 py-4 transition-colors ${
+                      ok
+                        ? 'border-[var(--gt-border)] hover:border-[var(--gt-accent)]/60 hover:bg-white/5'
+                        : 'cursor-not-allowed border-[var(--gt-border)]/50 opacity-40'
+                    }`}
+                  >
+                    <img src={LOGO[e]} alt="" className="h-7 w-7" draggable={false} />
+                    <span className="text-[13px] font-semibold text-zinc-100">{e}</span>
+                    <span className="text-[10px] text-zinc-500">{ok ? VENDOR[e] : 'not installed'}</span>
+                  </button>
+                )
+              })}
             </div>
+            {env && !env.codex.found && !env.claude.found && (
+              <p className="mt-3 text-[11px] text-[var(--gt-red)]">
+                Neither codex nor claude found on PATH. Install one, or set its path in Settings.
+              </p>
+            )}
           </>
         )}
 

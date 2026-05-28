@@ -34,10 +34,17 @@ bun install                   # also rebuilds node-pty against Electron's ABI
 bun run dev                   # launch the dev build
 ```
 
-`bun run dev` opens the **session picker**: resume an existing Claude session,
-start a new one in any folder, or **spin up a brand-new project from a
+On **first launch** a short onboarding probes your machine (which of
+`claude`/`codex`/`gh`/`glab` are installed + authenticated) and confirms your
+projects folder — everything has a working default, so you can skip it. After
+that, `bun run dev` opens the **session picker**: resume an existing Claude
+session, start a new one in any folder, or **spin up a brand-new project from a
 template** (see below). New sessions launch `claude --session-id <uuid>`;
 resumed ones launch `claude --resume <id>` in the session's original directory.
+
+The app is **self-configuring** — only `claude` is required; `codex`, `gh`, and
+`glab` are optional and enable the features that use them. See
+[**Setup & settings**](#setup) for the full picture.
 
 ### Install it as a real app
 
@@ -70,10 +77,11 @@ repo-aware — each shows based on the attached session's repo.
 - **Tickets** — browse/filter/create tickets from the repo's `backlog/`,
   **grouped by status** (closed/icebox collapsed by default). Inline
   status/priority edits write back to the markdown file.
-- **PRs** — live merge/pull requests via `glab` (GitLab) or the harness, each
-  opening a full review surface: description, the **review** body, **findings** +
-  **suggestions**, and a syntax-highlighted **diff** (unified/split, per-file
-  "viewed").
+- **PRs / MRs** — live pull/merge requests via `gh` (GitHub) or `glab` (GitLab),
+  **auto-detected per repo** from the remote (the tab + vocabulary switch between
+  "PR #N" and "MR !N"). Each opens a full review surface: description, the
+  **review** body, **findings** + **suggestions**, a syntax-highlighted **diff**
+  (unified/split, per-file "viewed"), forge **CI status**, and a **merge** button.
 - **HITL** — tickets flagged `hitl: true`: the things waiting on a human
   (approvals, creds, merges). The tab carries a live count.
 - **Agents** — on-demand [Codex](https://github.com/openai/codex) agents you
@@ -106,19 +114,18 @@ Two kinds of widget — both auto-discovered, no marketplace:
 
 ## <a name="agents"></a>Agents
 
-On-demand [Codex](https://github.com/openai/codex) agents you trigger from a
-**Run** button on the Agents tab. Each run gets its **own git worktree** off the
-default branch; `codex exec` does the work, files tickets for findings, and opens
-a **PR** for any code changes — all streamed live into the tab (with cancel +
-worktree controls). `codex` must be installed and authenticated.
+On-demand agents you trigger from a **Run** button on the Agents tab. Each run
+gets its **own git worktree** off the default branch; the engine does the work,
+files tickets for findings, and opens a **PR/MR** for any code changes — all
+streamed live into the tab (with cancel + worktree controls). A launch picker
+chooses the **engine** ([Codex](https://github.com/openai/codex) or
+[Claude](https://claude.com/claude-code) — only the ones installed are offered),
+an optional **persona** (security, performance, frontend, …), and a **pipeline**
+(single run, or chained review/iterate stages).
 
-Three ship **by default on every repo**:
-
-- **Improve docs** — generate/improve developer docs, open a PR.
-- **Deep audit** — audit correctness/security/architecture/perf/dead-code/deps;
-  file a ticket per finding, PR any safe fixes.
-- **Ticket / PR cleanup** — reconcile the backlog + open PRs (close/dedupe/fix),
-  file follow-ups, PR changes.
+Eight ship **by default on every repo** — Improve docs, Deep audit, Ticket/PR
+cleanup, Strengthen tests, Security sweep, Performance pass, Dependency hygiene,
+and Dead-code cleanup.
 
 Override or add your own per-repo in `.agents/agents.json` (merged by id over the
 defaults):
@@ -156,11 +163,32 @@ pinned submodule:
 git submodule update --remote templates/project-template
 ```
 
-## Configure
+## <a name="setup"></a>Setup & settings
+
+Most config lives in the in-app **Settings** panel (gear icon, top-right) and is
+saved to `~/.config/gauntlet-terminal/settings.json`:
+
+- **Projects & worktrees** — where the picker looks for repos; where agent
+  worktrees go; the scaffold template repo.
+- **Engines** — detected `codex`/`claude` with install/auth state; per-engine
+  path overrides; default engine.
+- **Code forge** — `auto` (gh for GitHub remotes, glab otherwise) / force
+  GitHub / force GitLab, with live install + auth readiness per CLI.
+- **Telegram** — native Bot API notifications + AFK remote control (paste a
+  BotFather token + chat id, hit **Test**). Falls back to legacy
+  `~/.claude/bin/telegram-*.sh` scripts if no token is set.
+- **Setup & integrations** — install the [`gt-notify`](docs/setup.md#5-activity-feed-hook-gt-notify)
+  activity hook, and **copy a setup prompt for Claude** to install the global
+  agent skills on a fresh machine.
+
+Full walkthrough (GitHub vs GitLab, global skills, Telegram, the activity-feed
+contract): [**`docs/setup.md`**](docs/setup.md).
+
+### Environment overrides
 
 | var                | default  | what it does                                                    |
 | ------------------ | -------- | --------------------------------------------------------------- |
-| `GT_CLAUDE_BIN`    | `claude` | the Claude Code binary to launch                                |
+| `GT_CLAUDE_BIN`    | `claude` | the Claude binary to launch (Settings → Engines also sets this) |
 | `GT_CONTEXT_LIMIT` | auto     | context-window cap. Auto = 200k (bumps to 1M past 200k tokens). |
 
 ```bash
