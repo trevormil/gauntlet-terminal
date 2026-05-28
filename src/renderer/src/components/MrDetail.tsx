@@ -218,26 +218,12 @@ function FindingCard({ f, mutedSeverity }: { f: Finding; mutedSeverity?: boolean
   )
 }
 
-function FindingsList({ items, suggestions }: { items: Finding[]; suggestions: Finding[] }) {
-  if (items.length === 0 && suggestions.length === 0)
-    return <div className="p-6 text-[12px] text-zinc-600">No findings or suggestions for this MR.</div>
+function FindingCards({ items, muted, empty }: { items: Finding[]; muted?: boolean; empty: string }) {
+  if (items.length === 0) return <div className="p-6 text-[12px] text-zinc-600">{empty}</div>
   return (
     <div className="h-full space-y-2 overflow-y-auto p-4">
-      {items.length > 0 && (
-        <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-zinc-600">
-          Findings ({items.length})
-        </div>
-      )}
       {items.map((f, i) => (
-        <FindingCard key={i} f={f} />
-      ))}
-      {suggestions.length > 0 && (
-        <div className="mb-1 mt-4 text-[10px] font-bold uppercase tracking-wide text-zinc-600">
-          Suggestions ({suggestions.length})
-        </div>
-      )}
-      {suggestions.map((f, i) => (
-        <FindingCard key={`s${i}`} f={f} mutedSeverity />
+        <FindingCard key={i} f={f} mutedSeverity={muted} />
       ))}
     </div>
   )
@@ -253,7 +239,9 @@ export function MrDetailView({
   onBack: () => void
 }) {
   const [mr, setMr] = useState<MrDetail | null | undefined>(undefined)
-  const [view, setView] = useState<'overview' | 'review' | 'findings' | 'diff'>('overview')
+  const [view, setView] = useState<'overview' | 'review' | 'findings' | 'suggestions' | 'diff'>(
+    'overview',
+  )
   const [diff, setDiff] = useState<string | null>(null)
 
   useEffect(() => {
@@ -312,7 +300,8 @@ export function MrDetailView({
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--gt-border)] px-4 py-1.5">
         {sub('overview', '📝 Overview')}
         {sub('review', '🔍 Review')}
-        {sub('findings', '⚠ Findings', mr.findings.length + mr.suggestions.length)}
+        {sub('findings', '⚠ Findings', mr.findings.length)}
+        {sub('suggestions', '💡 Suggestions', mr.suggestions.length)}
         {sub('diff', '🧬 Diff')}
         <span className="ml-2 truncate text-[10px] text-zinc-700">
           ⎇ {mr.sourceBranch} → {mr.targetBranch}
@@ -321,7 +310,12 @@ export function MrDetailView({
       <div className="min-h-0 flex-1 overflow-hidden">
         {view === 'overview' && <Overview mr={mr} />}
         {view === 'review' && <ReviewBody mr={mr} />}
-        {view === 'findings' && <FindingsList items={mr.findings} suggestions={mr.suggestions} />}
+        {view === 'findings' && (
+          <FindingCards items={mr.findings} empty="No findings for this MR." />
+        )}
+        {view === 'suggestions' && (
+          <FindingCards items={mr.suggestions} muted empty="No suggestions for this MR." />
+        )}
         {view === 'diff' && <DiffView diff={diff || ''} scope={`${repoLabel}.${iid}`} />}
       </div>
     </div>
