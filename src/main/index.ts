@@ -1,9 +1,14 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron'
-import { join, basename } from 'node:path'
+import { join, basename, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { statSync, existsSync, readdirSync } from 'node:fs'
 import * as pty from 'node-pty'
+
+// The main bundle is ESM (package.json "type": "module"), so __dirname doesn't
+// exist — derive the module dir the ESM-canonical way or the window never opens.
+const moduleDir = dirname(fileURLToPath(import.meta.url))
 import {
   readTranscriptStats,
   readHarnessTdd,
@@ -259,8 +264,8 @@ function createWindow() {
     // the 36px (h-9) tab bar, instead of being clipped/mis-aligned by the default
     trafficLightPosition: { x: 14, y: 11 },
     title: 'Gauntlet Terminal',
-    icon: join(__dirname, '../../build/icon.png'),
-    webPreferences: { preload: join(__dirname, '../preload/index.mjs'), sandbox: false },
+    icon: join(moduleDir, '../../build/icon.png'),
+    webPreferences: { preload: join(moduleDir, '../preload/index.mjs'), sandbox: false },
   })
 
   // The macOS traffic lights are hidden in fullscreen, so the renderer should
@@ -320,7 +325,7 @@ function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(moduleDir, '../renderer/index.html'))
   }
 }
 
