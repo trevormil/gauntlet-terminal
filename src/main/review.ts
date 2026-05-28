@@ -2,9 +2,10 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
-// Shared reader for autopilot-harness review/test artifacts.
-//   prs/<host>/<owner>/<repo>/<iid>/meta.json        (ordered commit list)
-//   prs/<host>/<owner>/<repo>/<iid>/<short_sha>.md    (frontmatter: verdict, test_status, scores.overall)
+// Reads code-review/test artifacts from two locations:
+//   in-repo (project-template):  <repoRoot>/.reviews/<iid>/<short_sha>.md  (+ findings/suggestions.json, no meta.json)
+//   legacy harness:              <HARNESS>/prs/<host>/<owner>/<repo>/<iid>/<short_sha>.md (+ meta.json commit list)
+// In-repo wins when present.
 export const HARNESS = join(homedir(), 'CompSci', 'gauntlet', 'autopilot-harness')
 
 export type Review = {
@@ -23,79 +24,52 @@ export function fmField(md: string, key: string): string | null {
   return m ? m[1].trim() : null
 }
 
-export function prDir(host: string, repoPath: string, iid: number | string): string {
-  return join(HARNESS, 'prs', host, ...repoPath.split('/'), String(iid))
+export function readJsonSafe<T = unknown>(file: string, fallback: T): T {
+  if (!existsSync(file)) return fallback
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as T
+  } catch {
+    return fallback
+  }
 }
 
-/** Read the review/test state for one PR directory, or null if untracked. */
-export function reviewForPrDir(dir: string): Review | null {
-  if (!existsSync(join(dir, 'meta.json'))) return null
-  let meta: any
+const safeReaddir = (d: string): string[] => {
   try {
-    meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8'))
+    return readdirSync(d)
   } catch {
-    return null
+    return []
   }
-  const commits: string[] = (meta.commits || []).map((c: any) =>
-    typeof c === 'string' ? c : c.sha || c.short || '',
-  )
-  const shortOf = (sha: string) => sha.slice(0, 7)
+}
+const harnessPrDir = (host: string, repoPath: string, iid: number | string) =>
+  join(HARNESS, 'prs', host, ...repoPath.split('/'), String(iid))
+const inRepoReviewDir = (repoRoot: string, iid: number | string) =>
+  join(repoRoot, '.reviews', String(iid))
 
-  let artifactIdx = -1
-  for (let i = 0; i < commits.length; i++) {
-    if ([`${commits[i]}.md`, `${shortOf(commits[i])}.md`].some((c) => existsSync(join(dir, c)))) {
-      artifactIdx = i
-      break
-    }
-  }
+function hasArtifacts(dir: string): boolean {
+  if (!existsSync(dir)) return false
+  return safeReaddir(dir).some((n) => /^[0-9a-f]{7,40}\.md$/.test(n)) || existsSync(join(dir, 'meta.json'))
+}
 
-  let overall: number | null = null
-  let verdict = 'none'
-  let testStatus = 'none'
-  let usedFallback = false
-  if (artifactIdx >= 0) {
-    const sha = commits[artifactIdx]
-    const file = [`${sha}.md`, `${shortOf(sha)}.md`]
-      .map((c) => join(dir, c))
-      .find((p) => existsSync(p))!
-    const md = readFileSync(file, 'utf8')
-    const ov = fmField(md, 'overall')
-    overall = ov ? Number(ov) : null
-    verdict = fmField(md, 'verdict') || 'none'
-    testStatus = fmField(md, 'test_status') || 'none'
-  } else {
-    // Fallback: meta.json's commits don't match any artifact (e.g. force-push
-    // rewrote history). Use the newest `<short>.md` file in the dir by mtime so
-    // the prior review is still visible (marked heavily stale).
-    const file = newestBareShaMd(dir)
-    if (file) {
-      usedFallback = true
-      const md = readFileSync(file, 'utf8')
-      const ov = fmField(md, 'overall')
-      overall = ov ? Number(ov) : null
-      verdict = fmField(md, 'verdict') || 'none'
-      testStatus = fmField(md, 'test_status') || 'none'
-    }
+/** The PR's artifact dir: prefer in-repo .reviews/<iid>, else harness prs/. */
+export function resolveReviewDir(
+  repoRoot: string,
+  host: string,
+  repoPath: string,
+  iid: number | string,
+): string | null {
+  if (repoRoot) {
+    const d = inRepoReviewDir(repoRoot, iid)
+    if (hasArtifacts(d)) return d
   }
-  return {
-    number: Number(meta.number) || 0,
-    overall,
-    verdict,
-    testStatus,
-    stale: artifactIdx > 0 || usedFallback,
-    commitsBehind: artifactIdx === -1 ? commits.length : artifactIdx,
-  }
+  const h = harnessPrDir(host, repoPath, iid)
+  if (hasArtifacts(h)) return h
+  return null
 }
 
 function newestBareShaMd(dir: string): string | null {
-  let names: string[]
-  try {
-    names = readdirSync(dir).filter((n) => /^[0-9a-f]{7,40}\.md$/.test(n))
-  } catch {
-    return null
-  }
   let best: { p: string; mtime: number } | null = null
-  for (const n of names) {
+  for (const n of safeReaddir(dir)) {
+    if (!/^[0-9a-f]{7,40}\.md$/.test(n)) continue
     const p = join(dir, n)
     try {
       const m = statSync(p).mtimeMs
@@ -107,78 +81,102 @@ function newestBareShaMd(dir: string): string | null {
   return best?.p ?? null
 }
 
-/** Body of the artifact for the newest-commit-with-an-artifact in a PR dir. */
-export function reviewBodyForPrDir(dir: string): string {
-  if (!existsSync(join(dir, 'meta.json'))) return ''
-  let meta: any
-  try {
-    meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8'))
-  } catch {
-    return ''
+// Resolve the artifact .md to read + staleness for a dir, handling both the
+// meta.json (harness, commit-ordered) and in-repo (mtime, headShort) cases.
+type Picked = { file: string; stale: boolean; commitsBehind: number; number: number }
+function pickArtifact(dir: string, headShort?: string): Picked | null {
+  const metaP = join(dir, 'meta.json')
+  if (existsSync(metaP)) {
+    let meta: any
+    try {
+      meta = JSON.parse(readFileSync(metaP, 'utf8'))
+    } catch {
+      return null
+    }
+    const commits: string[] = (meta.commits || []).map((c: any) =>
+      typeof c === 'string' ? c : c.sha || c.short || '',
+    )
+    const shortOf = (s: string) => s.slice(0, 7)
+    const number = Number(meta.number) || 0
+    for (let i = 0; i < commits.length; i++) {
+      const file = [`${commits[i]}.md`, `${shortOf(commits[i])}.md`]
+        .map((c) => join(dir, c))
+        .find((p) => existsSync(p))
+      if (file) return { file, stale: i > 0, commitsBehind: i, number }
+    }
+    // commits rewritten (force-push) — fall back to newest by mtime, mark stale
+    const fb = newestBareShaMd(dir)
+    return fb ? { file: fb, stale: true, commitsBehind: commits.length, number } : null
   }
-  const commits: string[] = (meta.commits || []).map((c: any) =>
-    typeof c === 'string' ? c : c.sha || c.short || '',
-  )
-  const short = (s: string) => s.slice(0, 7)
-  for (const c of commits) {
-    for (const name of [`${c}.md`, `${short(c)}.md`]) {
-      const p = join(dir, name)
-      if (existsSync(p)) {
-        const md = readFileSync(p, 'utf8')
-        return md.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+  // in-repo: no meta.json — newest artifact by mtime; stale vs the MR head sha
+  const fb = newestBareShaMd(dir)
+  if (!fb) return null
+  const sha = fb.match(/\/([0-9a-f]{7,40})\.md$/)?.[1].slice(0, 7) || ''
+  const stale = !!(headShort && sha && !headShort.startsWith(sha) && !sha.startsWith(headShort))
+  return { file: fb, stale, commitsBehind: stale ? 1 : 0, number: Number(dir.split('/').pop()) || 0 }
+}
+
+/** Review/test state for a PR dir, or null if no artifact. headShort enables
+ *  staleness detection for in-repo reviews (compare to the MR's current head). */
+export function reviewForPrDir(dir: string, headShort?: string): Review | null {
+  const a = pickArtifact(dir, headShort)
+  if (!a) {
+    // dir tracked (has meta) but no artifact generated yet
+    if (existsSync(join(dir, 'meta.json'))) {
+      const meta = readJsonSafe<any>(join(dir, 'meta.json'), {})
+      return { number: Number(meta.number) || 0, overall: null, verdict: 'none', testStatus: 'none', stale: false, commitsBehind: 0 }
+    }
+    return null
+  }
+  const md = readFileSync(a.file, 'utf8')
+  const ov = fmField(md, 'overall')
+  return {
+    number: a.number,
+    overall: ov ? Number(ov) : null,
+    verdict: fmField(md, 'verdict') || 'none',
+    testStatus: fmField(md, 'test_status') || 'none',
+    stale: a.stale,
+    commitsBehind: a.commitsBehind,
+  }
+}
+
+export function reviewBodyForPrDir(dir: string): string {
+  const a = pickArtifact(dir)
+  if (!a) return ''
+  return readFileSync(a.file, 'utf8')
+    .replace(/^---\n[\s\S]*?\n---\n?/, '')
+    .trim()
+}
+
+export function newestArtifactShortSha(dir: string): string {
+  const a = pickArtifact(dir)
+  if (!a) return ''
+  return a.file.match(/\/([0-9a-f]{7,40})\.md$/)?.[1].slice(0, 7) || ''
+}
+
+/** Newest reviewed PR dir for a repo (for the TDD widget): in-repo first. */
+export function newestReviewDirForRepo(repoRoot: string, host: string, repoPath: string): string | null {
+  if (repoRoot) {
+    const rdir = join(repoRoot, '.reviews')
+    if (existsSync(rdir)) {
+      let best: { dir: string; mtime: number } | null = null
+      for (const n of safeReaddir(rdir)) {
+        const f = newestBareShaMd(join(rdir, n))
+        if (!f) continue
+        try {
+          const m = statSync(f).mtimeMs
+          if (!best || m > best.mtime) best = { dir: join(rdir, n), mtime: m }
+        } catch {
+          /* skip */
+        }
       }
+      if (best) return best.dir
     }
   }
-  // fallback: newest <short>.md by mtime (force-push case)
-  const fb = newestBareShaMd(dir)
-  if (fb) return readFileSync(fb, 'utf8').replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
-  return ''
-}
-
-/** Newest-commit short_sha for a PR dir (for locating diff/finding files). */
-export function newestArtifactShortSha(dir: string): string {
-  if (!existsSync(join(dir, 'meta.json'))) return ''
-  let meta: any
-  try {
-    meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8'))
-  } catch {
-    return ''
-  }
-  const commits: string[] = (meta.commits || []).map((c: any) =>
-    typeof c === 'string' ? c : c.sha || c.short || '',
-  )
-  for (const c of commits) {
-    const short = c.slice(0, 7)
-    if (existsSync(join(dir, `${short}.md`)) || existsSync(join(dir, `${c}.md`))) return short
-  }
-  // fallback to newest <short>.md by mtime
-  const fb = newestBareShaMd(dir)
-  if (!fb) return ''
-  const m = fb.match(/\/([0-9a-f]{7,40})\.md$/)
-  return m ? m[1].slice(0, 7) : ''
-}
-
-export function readJsonSafe<T = unknown>(file: string, fallback: T): T {
-  if (!existsSync(file)) return fallback
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
-
-/** Newest tracked PR dir for a repo, by meta.json mtime. */
-export function newestPrDirForRepo(host: string, repoPath: string): string | null {
   const repoDir = join(HARNESS, 'prs', host, ...repoPath.split('/'))
   if (!existsSync(repoDir)) return null
   let best: { dir: string; mtime: number } | null = null
-  let nums: string[]
-  try {
-    nums = readdirSync(repoDir)
-  } catch {
-    return null
-  }
-  for (const n of nums) {
+  for (const n of safeReaddir(repoDir)) {
     const meta = join(repoDir, n, 'meta.json')
     try {
       if (existsSync(meta)) {

@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { repoForCwd } from './repo'
 import {
-  prDir,
+  resolveReviewDir,
   reviewForPrDir,
   reviewBodyForPrDir,
   newestArtifactShortSha,
@@ -72,6 +72,8 @@ export function listMrs(repoRoot: string): Promise<Mr[]> {
         const repo = repoForCwd(repoRoot)
         const mrs = arr.map((m): Mr => {
           const iid = m.iid ?? m.IID ?? m.number
+          const headShort = String(m.sha || m.diff_refs?.head_sha || '').slice(0, 7)
+          const dir = repo ? resolveReviewDir(repoRoot, repo.host, repo.path, iid) : null
           return {
             iid: Number(iid),
             title: m.title || '',
@@ -80,7 +82,7 @@ export function listMrs(repoRoot: string): Promise<Mr[]> {
             webUrl: m.web_url || m.webUrl || '',
             sourceBranch: m.source_branch || m.sourceBranch || '',
             draft: !!(m.draft ?? m.work_in_progress),
-            review: repo ? reviewForPrDir(prDir(repo.host, repo.path, iid)) : null,
+            review: dir ? reviewForPrDir(dir, headShort) : null,
           }
         })
         resolve(mrs)
@@ -126,17 +128,18 @@ export function getMr(repoRoot: string, iid: number): Promise<MrDetail | null> {
           return resolve(null)
         }
         const repo = repoForCwd(repoRoot)
+        const headShort = String(m.sha || m.diff_refs?.head_sha || '').slice(0, 7)
         let reviewMd = ''
         let reviewMeta: Review | null = null
         let findings: Finding[] = []
         let suggestions: Finding[] = []
         let artifactShortSha = ''
-        if (repo) {
-          const dir = prDir(repo.host, repo.path, iid)
-          reviewMeta = reviewForPrDir(dir)
+        const dir = repo ? resolveReviewDir(repoRoot, repo.host, repo.path, iid) : null
+        if (dir) {
+          reviewMeta = reviewForPrDir(dir, headShort)
           reviewMd = reviewBodyForPrDir(dir)
           artifactShortSha = newestArtifactShortSha(dir)
-          // harness stores either bare arrays or { findings: [...] } / { suggestions: [...] }
+          // stored as bare arrays or { findings: [...] } / { suggestions: [...] }
           const fRaw = readJsonSafe<any>(join(dir, 'findings.json'), [])
           findings = Array.isArray(fRaw) ? fRaw : Array.isArray(fRaw?.findings) ? fRaw.findings : []
           const sRaw = readJsonSafe<any>(join(dir, 'suggestions.json'), [])
@@ -172,9 +175,9 @@ export function getMr(repoRoot: string, iid: number): Promise<MrDetail | null> {
 export function getMrDiff(repoRoot: string, iid: number): Promise<string> {
   const repo = repoForCwd(repoRoot)
   if (repo) {
-    const dir = prDir(repo.host, repo.path, iid)
-    const short = newestArtifactShortSha(dir)
-    if (short) {
+    const dir = resolveReviewDir(repoRoot, repo.host, repo.path, iid)
+    const short = dir ? newestArtifactShortSha(dir) : ''
+    if (dir && short) {
       const f = join(dir, `${short}.diff.patch`)
       if (existsSync(f)) return Promise.resolve(readFileSync(f, 'utf8'))
     }

@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { repoForCwd } from './repo'
-import { reviewForPrDir, newestPrDirForRepo } from './review'
+import { repoForCwd, repoRootOf } from './repo'
+import { reviewForPrDir, newestReviewDirForRepo } from './review'
 
 // ---------------------------------------------------------------------------
 // Claude Code transcript reader
@@ -361,7 +361,7 @@ function computeHarnessTdd(cwd: string): TddInfo {
     ts: Date.now(),
   }
   if (!repo) return base
-  const dir = newestPrDirForRepo(repo.host, repo.path)
+  const dir = newestReviewDirForRepo(repoRootOf(cwd), repo.host, repo.path)
   if (!dir) return base
   const r = reviewForPrDir(dir)
   if (!r) return base
