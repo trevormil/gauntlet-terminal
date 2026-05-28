@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder --mac",
     "rebuild": "electron-rebuild -f -w node-pty",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@electron/rebuild": "3.7.1",
     "@tailwindcss/vite": "4.1.18",
+    "electron-builder": "26.11.1",
     "@types/node": "22.10.5",
     "@types/react": "19.0.2",
     "@types/react-dom": "19.0.2",

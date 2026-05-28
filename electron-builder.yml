@@ -1,0 +1,19 @@
+appId: com.gauntlet.terminal
+productName: Gauntlet Terminal
+# electron-vite outputs the bundled main/preload/renderer to out/; package that.
+directories:
+  buildResources: build # build/icon.icns is picked up automatically
+files:
+  - out/**
+  - package.json
+# node-pty ships a native .node binary that can't live inside the asar archive.
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+mac:
+  target:
+    - dmg
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  # Unsigned local build — skip code signing / notarization. First launch needs
+  # right-click → Open (Gatekeeper), then it runs normally.
+  identity: null
