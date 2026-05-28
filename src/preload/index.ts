@@ -27,6 +27,17 @@ const gt = {
     return () => ipcRenderer.removeListener('window:fullscreen', h)
   },
 
+  // activity feed + notifications
+  activity: {
+    list: () => ipcRenderer.invoke('activity:list'),
+    clear: () => ipcRenderer.invoke('activity:clear'),
+    onEvent: (cb: (ev: unknown) => void) => {
+      const h = (_e: unknown, ev: unknown) => cb(ev)
+      ipcRenderer.on('activity:event', h)
+      return () => ipcRenderer.removeListener('activity:event', h)
+    },
+  },
+
   // terminal io, routed by session key (the pty is spawned by startSession)
   pty: {
     input: (key: string, data: string) => ipcRenderer.send('pty:input', key, data),

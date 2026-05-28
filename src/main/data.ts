@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync, openSync, readSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { repoForCwd, repoRootOf } from './repo'
@@ -139,6 +139,40 @@ export function findSessionFile(sessionId: string): string | null {
   for (const project of readdirSync(PROJECTS_DIR)) {
     const p = join(PROJECTS_DIR, project, `${sessionId}.jsonl`)
     if (existsSync(p)) return p
+  }
+  return null
+}
+
+/**
+ * The most recent assistant turn in a transcript, by reading just the tail.
+ * `endTurn` is true when that turn finished (stop_reason 'end_turn') vs. is
+ * mid-work ('tool_use'); `id` dedupes so a completion fires once. Tail-only so
+ * it's cheap to poll across many sessions.
+ */
+export function lastAssistantTurn(file: string): { id: string; endTurn: boolean } | null {
+  try {
+    const size = statSync(file).size
+    if (!size) return null
+    const len = Math.min(size, 65536)
+    const fd = openSync(file, 'r')
+    const buf = Buffer.alloc(len)
+    readSync(fd, buf, 0, len, size - len)
+    closeSync(fd)
+    const lines = buf.toString('utf8').split('\n').filter(Boolean)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let o: any
+      try {
+        o = JSON.parse(lines[i])
+      } catch {
+        continue // first line in the window may be truncated — skip
+      }
+      if (o?.type === 'assistant') {
+        const m = o.message || {}
+        return { id: String(m.id || o.uuid || o.timestamp || i), endTurn: m.stop_reason === 'end_turn' }
+      }
+    }
+  } catch {
+    /* unreadable */
   }
   return null
 }

@@ -42,3 +42,14 @@ export const sessionStatusTone = (s: string): BadgeTone =>
 
 export const horizonTone = (h: string): BadgeTone =>
   h === 'now' ? 'accent' : h === 'next' ? 'blue' : 'mute'
+
+export const activityTone = (k: string): BadgeTone =>
+  k === 'task-complete'
+    ? 'green'
+    : k === 'ticket-filed'
+      ? 'accent'
+      : k === 'pr-verdict'
+        ? 'blue'
+        : k === 'error'
+          ? 'red'
+          : 'mute'

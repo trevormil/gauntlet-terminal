@@ -28,6 +28,24 @@ export type TranscriptStats = {
 
 export type TaskItem = { id: string; subject: string; status: string; activeForm: string }
 
+export type ActivityKind =
+  | 'task-complete'
+  | 'ticket-filed'
+  | 'pr-verdict'
+  | 'session-start'
+  | 'error'
+  | 'info'
+export type ActivityEvent = {
+  id: string
+  ts: number
+  kind: ActivityKind
+  title: string
+  detail?: string
+  repo?: string
+  repoRoot?: string
+  sessionId?: string
+}
+
 export type UsageWindow = { pct: number; resetsAt: number | null } | null
 export type Usage = {
   ok: boolean
@@ -199,6 +217,11 @@ export type GtApi = {
   ) => Promise<{ ok: boolean; path?: string; error?: string }>
   isFullscreen: () => Promise<boolean>
   onFullscreen: (cb: (v: boolean) => void) => () => void
+  activity: {
+    list: () => Promise<ActivityEvent[]>
+    clear: () => Promise<void>
+    onEvent: (cb: (ev: ActivityEvent) => void) => () => void
+  }
   pty: {
     input: (key: string, data: string) => void
     resize: (key: string, size: { cols: number; rows: number }) => void

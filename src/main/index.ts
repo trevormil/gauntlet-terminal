@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { statSync, existsSync, readdirSync } from 'node:fs'
@@ -10,7 +10,9 @@ import {
   listSessions,
   findSessionFile,
   readSessionTasks,
+  lastAssistantTurn,
 } from './data'
+import { emitActivity, readActivity, clearActivity, onActivity } from './events'
 import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
 import { repoRootOf, repoForCwd, gitStatus } from './repo'
@@ -83,6 +85,14 @@ function startSession(key: string, opts: StartOpts) {
   sessions.set(key, { pty: proc, pinned: { sessionId, cwd, mode: opts.mode, name: opts.name || '' } })
   activeKey = key
   watchSession()
+  emitActivity({
+    kind: 'session-start',
+    title: `${opts.name || basename(cwd) || 'session'} · ${opts.mode === 'resume' ? 'resumed' : 'started'}`,
+    detail: cwd.replace(homedir(), '~'),
+    repo: repoForCwd(cwd)?.path || basename(repoRootOf(cwd) || ''),
+    repoRoot: repoRootOf(cwd),
+    sessionId,
+  })
   return { sessionId, cwd }
 }
 
@@ -139,6 +149,62 @@ function watchSession() {
   }, 400)
 }
 
+// Per-session turn watcher → activity feed + notifications. Watches EVERY
+// running session's transcript (backgrounded ones too — that's the point) and
+// fires a "ready" event the moment a turn completes (stop_reason 'end_turn'),
+// deduped by the assistant message id so it fires once per turn.
+type TurnWatch = { file: string; mtime: number; lastTurnId: string }
+const turnWatch = new Map<string, TurnWatch>()
+let activityTimer: ReturnType<typeof setInterval> | null = null
+function pollActivity() {
+  for (const [key, s] of sessions) {
+    const sid = s.pinned.sessionId
+    if (!sid) continue
+    let w = turnWatch.get(key)
+    if (!w) {
+      const file = findSessionFile(sid)
+      if (!file) continue
+      // seed without firing: record the current turn so we only notify on NEW ones
+      const seed = lastAssistantTurn(file)
+      w = { file, mtime: 0, lastTurnId: seed?.endTurn ? seed.id : '' }
+      try {
+        w.mtime = statSync(file).mtimeMs
+      } catch {
+        /* ignore */
+      }
+      turnWatch.set(key, w)
+      continue
+    }
+    let m = 0
+    try {
+      m = statSync(w.file).mtimeMs
+    } catch {
+      continue
+    }
+    if (m === w.mtime) continue
+    w.mtime = m
+    const t = lastAssistantTurn(w.file)
+    if (!t || !t.endTurn || t.id === w.lastTurnId) continue
+    w.lastTurnId = t.id
+    const focusedHere = key === activeKey && (win?.isFocused() ?? false)
+    const label = s.pinned.name || basename(s.pinned.cwd) || 'session'
+    const st = readTranscriptStats(sid)
+    emitActivity(
+      {
+        kind: 'task-complete',
+        title: `${label} · ready`,
+        detail: st.aiTitle || (st.lastAction ? `done — ${st.lastAction.tool}` : 'Turn complete'),
+        repo: repoForCwd(s.pinned.cwd)?.path || basename(repoRootOf(s.pinned.cwd) || ''),
+        repoRoot: repoRootOf(s.pinned.cwd),
+        sessionId: sid,
+      },
+      // don't ping for the session you're actively looking at
+      { notify: !focusedHere },
+    )
+  }
+  for (const k of turnWatch.keys()) if (!sessions.has(k)) turnWatch.delete(k)
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1320,
@@ -169,6 +235,10 @@ function createWindow() {
   win.webContents.on('render-process-gone', (_e, d) =>
     console.error('[gt] renderer gone:', d.reason),
   )
+
+  // push activity events to the renderer; poll all sessions for turn completion
+  onActivity((ev) => send('activity:event', ev))
+  if (!activityTimer) activityTimer = setInterval(pollActivity, 1500)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -211,6 +281,8 @@ ipcMain.handle('project:scaffold', (_e, name: string, parentDir?: string) =>
   scaffoldProject(name, parentDir),
 )
 ipcMain.handle('window:is-fullscreen', () => win?.isFullScreen() ?? false)
+ipcMain.handle('activity:list', () => readActivity())
+ipcMain.handle('activity:clear', () => clearActivity())
 
 // ---- PTY IPC (routed by session key) ----
 ipcMain.on('pty:input', (_e, key: string, data: string) => sessions.get(key)?.pty.write(data))
@@ -255,9 +327,19 @@ ipcMain.handle('sessions:project-get', (_e, slug: string) =>
 )
 ipcMain.handle('tickets:list', () => listTickets(repoRootOf(cur().cwd)))
 ipcMain.handle('tickets:get', (_e, slug: string) => getTicket(repoRootOf(cur().cwd), slug))
-ipcMain.handle('tickets:create', (_e, input: NewTicket) =>
-  createTicket(repoRootOf(cur().cwd), input),
-)
+ipcMain.handle('tickets:create', (_e, input: NewTicket) => {
+  const root = repoRootOf(cur().cwd)
+  const t = createTicket(root, input)
+  emitActivity({
+    kind: 'ticket-filed',
+    title: `Ticket filed · #${t.id}`,
+    detail: t.title,
+    repo: repoForCwd(cur().cwd)?.path || basename(root || ''),
+    repoRoot: root,
+    sessionId: cur().sessionId,
+  })
+  return t
+})
 ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; priority?: string }) =>
   updateTicket(repoRootOf(cur().cwd), slug, patch),
 )
@@ -299,6 +381,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (watchTimer) clearInterval(watchTimer)
+  if (activityTimer) clearInterval(activityTimer)
   for (const s of sessions.values()) s.pty.kill()
   sessions.clear()
   if (process.platform !== 'darwin') app.quit()
