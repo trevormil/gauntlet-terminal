@@ -353,9 +353,9 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                 <EnginePicker
                   title={`Implement #${selected.id} → PR`}
                   onClose={() => setPickImpl(false)}
-                  onPick={async (e, persona) => {
+                  onPick={async (e, persona, pipeline) => {
                     setPickImpl(false)
-                    const r = await window.gt.agents.runTicket(selected.slug, e, persona)
+                    const r = await window.gt.agents.runTicket(selected.slug, e, persona, pipeline)
                     if (!('error' in r)) {
                       setStarted(true)
                       setTimeout(() => setStarted(false), 4000)

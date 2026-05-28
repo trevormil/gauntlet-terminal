@@ -11,9 +11,29 @@ import {
   closeSync,
   watch,
 } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+
+// Reuse the project-template /notify Telegram bridge for remote pings.
+const TG_SCRIPT = join(homedir(), '.claude', 'bin', 'telegram-notify.sh')
+function tgKind(ev: ActivityEvent): string {
+  if (ev.kind === 'error') return 'blocked'
+  if (ev.kind === 'task-complete') return 'done'
+  if (ev.kind === 'agent-run')
+    return /failed|interrupted/i.test(ev.title) ? 'blocked' : /done/i.test(ev.title) ? 'done' : 'info'
+  return 'info'
+}
+function sendTelegram(ev: ActivityEvent) {
+  if (!existsSync(TG_SCRIPT)) return // bridge not provisioned → skip silently
+  try {
+    const msg = ev.detail ? `${ev.title} — ${ev.detail}` : ev.title
+    spawn(TG_SCRIPT, [`--kind=${tgKind(ev)}`, msg], { stdio: 'ignore' }).unref()
+  } catch {
+    /* best effort */
+  }
+}
 
 // Activity feed + system notifications. Events are stored GLOBALLY (one log
 // across every repo/session) but each is tagged with repo + session, so the
@@ -70,12 +90,15 @@ export function emitActivity(
     /* best effort */
   }
   const notify = opts?.notify ?? NOTIFY[ev.kind]
-  if (notify && Notification.isSupported()) {
-    try {
-      new Notification({ title: ev.title, body: ev.detail || '' }).show()
-    } catch {
-      /* notifications unavailable */
+  if (notify) {
+    if (Notification.isSupported()) {
+      try {
+        new Notification({ title: ev.title, body: ev.detail || '' }).show()
+      } catch {
+        /* notifications unavailable */
+      }
     }
+    sendTelegram(ev) // mirror to Telegram if the bridge is set up
   }
   // NOTE: don't broadcast here — the file tail (below) picks up this append and
   // broadcasts it, so terminal-written and skill-written events flow through one

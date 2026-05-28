@@ -119,6 +119,8 @@ export type Agent = {
   engine?: Engine
 }
 export type Persona = { id: string; title: string; description: string; icon?: string; prompt: string }
+export type PipelineId = 'single' | 'review' | 'review-iterate'
+export type PipelineInfo = { id: PipelineId; title: string; description: string }
 export type AgentRunStatus = 'running' | 'done' | 'failed' | 'canceled' | 'interrupted'
 export type AgentRun = {
   id: string
@@ -126,6 +128,7 @@ export type AgentRun = {
   agentTitle: string
   engine: Engine
   persona?: string
+  pipeline?: string
   status: AgentRunStatus
   startedAt: number
   endedAt?: number
@@ -288,8 +291,26 @@ export type GtApi = {
   agents: {
     list: () => Promise<Agent[]>
     personas: () => Promise<Persona[]>
-    run: (id: string, engine?: Engine, persona?: string) => Promise<AgentRun | { error: string }>
-    runTicket: (slug: string, engine: Engine, persona?: string) => Promise<AgentRun | { error: string }>
+    pipelines: () => Promise<PipelineInfo[]>
+    run: (
+      id: string,
+      engine?: Engine,
+      persona?: string,
+      pipeline?: string,
+    ) => Promise<AgentRun | { error: string }>
+    runTicket: (
+      slug: string,
+      engine: Engine,
+      persona?: string,
+      pipeline?: string,
+    ) => Promise<AgentRun | { error: string }>
+    runPr: (
+      pr: { iid: number; sourceBranch: string; title?: string; webUrl?: string },
+      kind: 'review' | 'iterate',
+      engine: Engine,
+      persona?: string,
+      pipeline?: string,
+    ) => Promise<AgentRun | { error: string }>
     runs: () => Promise<AgentRun[]>
     cancel: (runId: string) => Promise<boolean>
     removeWorktree: (runId: string) => Promise<boolean>

@@ -38,6 +38,7 @@ export type AgentRun = {
   agentTitle: string
   engine: Engine
   persona?: string
+  pipeline?: string // display label when this run chained multiple stages
   status: AgentRunStatus
   startedAt: number
   endedAt?: number
@@ -226,35 +227,117 @@ function buildCmd(engine: Engine, worktree: string, prompt: string): string {
   return `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(prompt)}`
 }
 
-type RunSpec = { id: string; title: string; prompt: string; engine: Engine; persona?: string }
+// --- pipelines: a chain of stages run sequentially in ONE worktree ----------
+// The first step is the task itself; pipeline stages append review/iterate
+// passes after it. All stages share the worktree + branch, so a later stage
+// sees what an earlier one committed.
+type Step = { label: string; prompt: string }
+
+const REVIEW_STAGE: Step = {
+  label: 'review',
+  prompt:
+    'Now act as a meticulous senior reviewer of the work just done on this branch. Inspect `git diff` against the base branch and `git log`. Evaluate correctness, security, architecture, and quality. Fix any real issues you find directly in this worktree — with tests — and commit. If a PR is open for this branch, update it. End with a concise review summary: what you found and what you changed.',
+}
+const ITERATE_STAGE: Step = {
+  label: 'iterate',
+  prompt:
+    'Now iterate until this branch is merge-ready: resolve any remaining review findings and TODOs, make the test suite and build pass, and tighten edge cases — keep changes surgical. Commit your work and update the PR if one is open. End with the final status (tests/build green?) and a short summary.',
+}
+
+export type PipelineId = 'single' | 'review' | 'review-iterate'
+const PIPELINES: Record<PipelineId, { id: PipelineId; title: string; description: string; stages: Step[] }> = {
+  single: { id: 'single', title: 'Single run', description: 'Just the task — one pass.', stages: [] },
+  review: {
+    id: 'review',
+    title: 'Review',
+    description: 'Task → a reviewer pass that fixes issues it finds.',
+    stages: [REVIEW_STAGE],
+  },
+  'review-iterate': {
+    id: 'review-iterate',
+    title: 'Review + Iterate',
+    description: 'Task → review → iterate until merge-ready.',
+    stages: [REVIEW_STAGE, ITERATE_STAGE],
+  },
+}
+
+export function listPipelines(): { id: PipelineId; title: string; description: string }[] {
+  return Object.values(PIPELINES).map(({ id, title, description }) => ({ id, title, description }))
+}
+
+// Compose the runnable steps: prepend the persona framing (if any) to each
+// stage, and tack the pipeline stages onto the base task.
+function buildSteps(repoRoot: string, base: Step, personaId?: string, pipelineId?: string) {
+  const p = personaId ? getPersona(repoRoot, personaId) : null
+  const pipeline = PIPELINES[(pipelineId as PipelineId) || 'single'] || PIPELINES.single
+  const steps: Step[] = [base, ...pipeline.stages].map((s) => ({
+    label: s.label,
+    prompt: p ? `${p.prompt}\n\n---\n\n${s.prompt}` : s.prompt,
+  }))
+  return { steps, persona: p?.title, pipeline: pipeline.id === 'single' ? undefined : pipeline.title }
+}
+
+type RunSpec = {
+  id: string
+  title: string
+  steps: Step[]
+  engine: Engine
+  persona?: string
+  pipeline?: string
+  /** PR-tab agents work ON an existing MR head instead of a fresh branch. */
+  prRef?: { iid: number; sourceBranch: string }
+}
 
 function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } {
   if (!repoRoot) return { error: 'not a git repo' }
+  if (!spec.steps.length) return { error: 'no steps' }
   const ts = Date.now()
-  const branch = `agent/${spec.id}-${ts}`
   const worktree = join(WORKTREES, basename(repoRoot) || 'repo', `${spec.id}-${ts}`)
-  const base = defaultBase(repoRoot)
+  let branch: string
   try {
-    execFileSync('git', ['-C', repoRoot, 'worktree', 'add', worktree, '-b', branch, base], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    if (spec.prRef) {
+      // Fetch the MR head and check it out detached; the agent pushes back to
+      // the source branch (HEAD:<sourceBranch>) to update the MR.
+      execFileSync('git', ['-C', repoRoot, 'fetch', 'origin', spec.prRef.sourceBranch], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      execFileSync('git', ['-C', repoRoot, 'worktree', 'add', '--detach', worktree, 'FETCH_HEAD'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      branch = spec.prRef.sourceBranch
+    } else {
+      branch = `agent/${spec.id}-${ts}`
+      const base = defaultBase(repoRoot)
+      execFileSync('git', ['-C', repoRoot, 'worktree', 'add', worktree, '-b', branch, base], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    }
   } catch (e) {
     return { error: `worktree: ${(e as Error).message}` }
   }
   const repoLabel = repoForCwd(repoRoot)?.path || basename(repoRoot)
+  const baseLine = spec.prRef
+    ? `▸ on MR !${spec.prRef.iid} · branch ${branch}`
+    : `▸ branch ${branch} (off ${defaultBase(repoRoot)})`
+  const header =
+    `▸ ${spec.title} · ${spec.engine}${spec.persona ? ` · as ${spec.persona}` : ''}` +
+    `${spec.pipeline ? ` · ${spec.pipeline}` : ''}\n${baseLine}\n▸ worktree ${worktree}\n\n`
   const run: AgentRun = {
     id: randomUUID(),
     agentId: spec.id,
     agentTitle: spec.title,
     engine: spec.engine,
     persona: spec.persona,
+    pipeline: spec.pipeline,
     status: 'running',
     startedAt: ts,
     repoRoot,
     worktree,
     branch,
-    output: `▸ ${spec.title} · ${spec.engine}${spec.persona ? ` · as ${spec.persona}` : ''} · worktree ${worktree}\n▸ branch ${branch} (off ${base})\n▸ running…\n\n`,
+    output: header,
   }
   runs.set(run.id, run)
   persistMeta(run)
@@ -265,53 +348,58 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
     { notify: false },
   )
 
-  const p = spawn(LOGIN_SHELL, ['-l', '-c', buildCmd(spec.engine, worktree, spec.prompt)], {
-    cwd: worktree,
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  procs.set(run.id, p)
-  const append = (d: Buffer) => {
-    const chunk = d.toString()
+  const append = (chunk: string) => {
     run.output += chunk
     if (run.output.length > OUTPUT_CAP) run.output = run.output.slice(-OUTPUT_CAP)
     appendLog(run.id, chunk)
     emit('agent:output', { runId: run.id, chunk })
   }
-  p.stdout?.on('data', append)
-  p.stderr?.on('data', append)
-  p.on('error', (err) => {
-    run.output += `\n[spawn error] ${err.message}\n`
-    appendLog(run.id, `\n[spawn error] ${err.message}\n`)
-    run.status = 'failed'
+
+  let settled = false
+  const finalize = (status: AgentRunStatus, exitCode?: number) => {
+    if (settled) return
+    settled = true
+    run.status = status
     run.endedAt = Date.now()
-    procs.delete(run.id)
-    persistMeta(run)
-    emit('agent:status', run)
-    emitActivity({ kind: 'agent-run', title: `Agent failed · ${spec.title}`, detail: err.message, repo: repoLabel, repoRoot })
-  })
-  p.on('exit', (code) => {
-    if (run.status !== 'canceled') run.status = code === 0 ? 'done' : 'failed'
-    run.endedAt = Date.now()
-    run.exitCode = code ?? undefined
+    run.exitCode = exitCode
     procs.delete(run.id)
     persistMeta(run)
     emit('agent:status', run)
     emitActivity({
       kind: 'agent-run',
-      title: `Agent ${run.status} · ${spec.title}`,
-      detail: `${spec.engine} · ${run.branch}`,
+      title: `Agent ${status} · ${spec.title}`,
+      detail: `${spec.engine} · ${branch}`,
       repo: repoLabel,
       repoRoot,
     })
-  })
-  return run
-}
+  }
 
-// Prepend a persona framing (if any) to the task prompt.
-function withPersona(repoRoot: string, personaId: string | undefined, base: string) {
-  const p = personaId ? getPersona(repoRoot, personaId) : null
-  return { prompt: p ? `${p.prompt}\n\n---\n\n${base}` : base, persona: p?.title }
+  let stepIdx = 0
+  const runStep = () => {
+    const step = spec.steps[stepIdx]
+    if (spec.steps.length > 1) append(`\n━━ step ${stepIdx + 1}/${spec.steps.length} · ${step.label} ━━\n\n`)
+    const p = spawn(LOGIN_SHELL, ['-l', '-c', buildCmd(spec.engine, worktree, step.prompt)], {
+      cwd: worktree,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    procs.set(run.id, p)
+    p.stdout?.on('data', (d: Buffer) => append(d.toString()))
+    p.stderr?.on('data', (d: Buffer) => append(d.toString()))
+    p.on('error', (err) => {
+      append(`\n[spawn error] ${err.message}\n`)
+      finalize('failed')
+    })
+    p.on('exit', (code) => {
+      if (run.status === 'canceled') return finalize('canceled', code ?? undefined)
+      if (code !== 0) return finalize('failed', code ?? undefined)
+      stepIdx++
+      if (stepIdx < spec.steps.length) runStep()
+      else finalize('done', 0)
+    })
+  }
+  runStep()
+  return run
 }
 
 export function runAgent(
@@ -319,17 +407,17 @@ export function runAgent(
   agentId: string,
   engine?: Engine,
   personaId?: string,
+  pipelineId?: string,
 ): AgentRun | { error: string } {
   const agent = readAgents(repoRoot).find((a) => a.id === agentId)
   if (!agent) return { error: 'unknown agent' }
-  const { prompt, persona } = withPersona(repoRoot, personaId, agent.prompt)
-  return runSpec(repoRoot, {
-    id: agent.id,
-    title: agent.title,
-    prompt,
-    engine: engine || agent.engine || 'codex',
-    persona,
-  })
+  const { steps, persona, pipeline } = buildSteps(
+    repoRoot,
+    { label: agent.title, prompt: agent.prompt },
+    personaId,
+    pipelineId,
+  )
+  return runSpec(repoRoot, { id: agent.id, title: agent.title, steps, engine: engine || agent.engine || 'codex', persona, pipeline })
 }
 
 /** Turn a backlog ticket into an implementation run that opens a PR. */
@@ -338,10 +426,48 @@ export function runTicketAgent(
   ticket: { id: number; title: string; body: string },
   engine: Engine,
   personaId?: string,
+  pipelineId?: string,
 ): AgentRun | { error: string } {
   const base = `Implement backlog ticket #${ticket.id}: ${ticket.title}\n\n${ticket.body}\n\nWork in this worktree on its branch. Implement the ticket end to end — keep changes surgical and add/adjust tests. Commit your work and open a PR that references ticket #${ticket.id}. If fully delivered set the ticket status to closed (else in-progress) and link the PR in its prs: field. End with a short summary of what changed and the PR URL.`
-  const { prompt, persona } = withPersona(repoRoot, personaId, base)
-  return runSpec(repoRoot, { id: `ticket-${ticket.id}`, title: `Implement #${ticket.id}`, prompt, engine, persona })
+  const { steps, persona, pipeline } = buildSteps(repoRoot, { label: `implement #${ticket.id}`, prompt: base }, personaId, pipelineId)
+  return runSpec(repoRoot, { id: `ticket-${ticket.id}`, title: `Implement #${ticket.id}`, steps, engine, persona, pipeline })
+}
+
+export type PrAgentKind = 'review' | 'iterate'
+
+/** Spin an agent out ON an open MR: checks out the MR head, reviews/iterates,
+ *  and pushes back to the source branch to update it. */
+export function runPrAgent(
+  repoRoot: string,
+  pr: { iid: number; sourceBranch: string; title?: string; webUrl?: string },
+  kind: PrAgentKind,
+  engine: Engine,
+  personaId?: string,
+  pipelineId?: string,
+): AgentRun | { error: string } {
+  if (!pr?.sourceBranch) return { error: 'MR has no source branch' }
+  const ref = pr.webUrl || `!${pr.iid}`
+  const ctx = `This worktree is checked out at the head of MR !${pr.iid} (${ref}${pr.title ? ` — "${pr.title}"` : ''}) on branch "${pr.sourceBranch}". After committing, push back to the MR with \`git push origin HEAD:${pr.sourceBranch}\`.`
+  const base: Step =
+    kind === 'review'
+      ? {
+          label: `review !${pr.iid}`,
+          prompt: `Do a thorough senior code review of MR !${pr.iid}. ${ctx} Inspect \`git diff\` against the target branch and \`git log\`. Evaluate correctness, security, architecture, conformance, quality, and dependencies. Post your review on the MR (\`glab mr note ${pr.iid} -m …\`). Where you find clear, safe fixes, apply them with tests, commit, and push. End with a concise verdict and the list of findings.`,
+        }
+      : {
+          label: `iterate !${pr.iid}`,
+          prompt: `Iterate on MR !${pr.iid} until it is merge-ready. ${ctx} Address open review findings and TODOs, make the test suite and build pass, and tighten edge cases — keep changes surgical. Commit and push your work. End with the final status (tests/build green?) and a short summary of what changed.`,
+        }
+  const { steps, persona, pipeline } = buildSteps(repoRoot, base, personaId, pipelineId)
+  return runSpec(repoRoot, {
+    id: `pr-${kind}-${pr.iid}`,
+    title: `${kind === 'review' ? 'Review' : 'Iterate'} !${pr.iid}`,
+    steps,
+    engine,
+    persona,
+    pipeline,
+    prRef: { iid: pr.iid, sourceBranch: pr.sourceBranch },
+  })
 }
 
 export function cancelRun(runId: string): boolean {

@@ -5,6 +5,7 @@ import {
   Ticket,
   GitPullRequest,
   Cpu,
+  Bot,
   TriangleAlert,
   Info,
   type LucideIcon,
@@ -18,6 +19,7 @@ const ICON: Record<ActivityKind, LucideIcon> = {
   'ticket-filed': Ticket,
   'pr-verdict': GitPullRequest,
   'session-start': Cpu,
+  'agent-run': Bot,
   error: TriangleAlert,
   info: Info,
 }

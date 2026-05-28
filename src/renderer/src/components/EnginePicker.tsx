@@ -1,14 +1,33 @@
 import { useEffect, useState } from 'react'
-import { X, ChevronLeft, Ban, ShieldCheck, Gauge, Compass, UserRound, type LucideIcon } from 'lucide-react'
-import type { Engine, Persona } from '../lib/types'
+import {
+  X,
+  ChevronLeft,
+  Ban,
+  ShieldCheck,
+  Gauge,
+  Compass,
+  UserRound,
+  Zap,
+  Eye,
+  Repeat2,
+  Layers,
+  type LucideIcon,
+} from 'lucide-react'
+import type { Engine, Persona, PipelineInfo } from '../lib/types'
 import openaiLogo from '../assets/openai.svg'
 import anthropicLogo from '../assets/anthropic.svg'
 
-// Two-step launch picker: pick an engine (codex/claude), then a persona
-// (none + built-ins). onPick fires with the engine + persona id ('' = none).
+// Three-step launch picker: engine (codex/claude) → persona (none + built-ins)
+// → pipeline (single run, or chained review/iterate stages). onPick fires with
+// engine + persona id ('' = none) + pipeline id ('single' = just the task).
 const LOGO: Record<Engine, string> = { codex: openaiLogo, claude: anthropicLogo }
 const VENDOR: Record<Engine, string> = { codex: 'OpenAI Codex', claude: 'Anthropic Claude' }
 const PERSONA_ICON: Record<string, LucideIcon> = { ShieldCheck, Gauge, Compass }
+const PIPELINE_ICON: Record<string, LucideIcon> = {
+  single: Zap,
+  review: Eye,
+  'review-iterate': Repeat2,
+}
 
 export function EnginePicker({
   title,
@@ -16,14 +35,20 @@ export function EnginePicker({
   onClose,
 }: {
   title: string
-  onPick: (engine: Engine, persona: string) => void
+  onPick: (engine: Engine, persona: string, pipeline: string) => void
   onClose: () => void
 }) {
   const [engine, setEngine] = useState<Engine | null>(null)
+  const [persona, setPersona] = useState<string | null>(null) // null = not chosen, '' = none
   const [personas, setPersonas] = useState<Persona[]>([])
+  const [pipelines, setPipelines] = useState<PipelineInfo[]>([])
   useEffect(() => {
     window.gt.agents.personas().then(setPersonas)
+    window.gt.agents.pipelines().then(setPipelines)
   }, [])
+
+  const step = engine === null ? 1 : persona === null ? 2 : 3
+  const back = () => (step === 3 ? setPersona(null) : setEngine(null))
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -32,9 +57,9 @@ export function EnginePicker({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center gap-2">
-          {engine && (
+          {step > 1 && (
             <button
-              onClick={() => setEngine(null)}
+              onClick={back}
               className="flex items-center rounded p-1 text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
             >
               <ChevronLeft size={15} strokeWidth={2} />
@@ -49,7 +74,7 @@ export function EnginePicker({
           </button>
         </div>
 
-        {!engine ? (
+        {step === 1 && (
           <>
             <p className="mb-3 text-[11.5px] text-zinc-500">1 · Launch with which engine?</p>
             <div className="grid grid-cols-2 gap-2">
@@ -66,14 +91,16 @@ export function EnginePicker({
               ))}
             </div>
           </>
-        ) : (
+        )}
+
+        {step === 2 && (
           <>
             <p className="mb-3 text-[11.5px] text-zinc-500">
               2 · Run as a persona? <span className="text-zinc-600">(via {engine})</span>
             </p>
             <div className="max-h-[320px] space-y-1.5 overflow-y-auto">
               <button
-                onClick={() => onPick(engine, '')}
+                onClick={() => setPersona('')}
                 className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--gt-border)] bg-black/20 p-3 text-left transition-colors hover:border-[var(--gt-accent)]/60 hover:bg-white/5"
               >
                 <Ban size={17} strokeWidth={1.75} className="shrink-0 text-zinc-500" />
@@ -87,13 +114,43 @@ export function EnginePicker({
                 return (
                   <button
                     key={p.id}
-                    onClick={() => onPick(engine, p.id)}
+                    onClick={() => setPersona(p.id)}
                     className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--gt-border)] bg-black/20 p-3 text-left transition-colors hover:border-[var(--gt-accent)]/60 hover:bg-white/5"
                   >
                     <Icon size={17} strokeWidth={1.75} className="shrink-0 text-[var(--gt-accent-light)]" />
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] font-semibold text-zinc-100">{p.title}</div>
                       <div className="text-[11px] leading-snug text-zinc-500">{p.description}</div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <p className="mb-3 text-[11.5px] text-zinc-500">
+              3 · Pipeline?{' '}
+              <span className="text-zinc-600">
+                ({engine}
+                {persona ? ` · ${personas.find((p) => p.id === persona)?.title || persona}` : ''})
+              </span>
+            </p>
+            <div className="max-h-[320px] space-y-1.5 overflow-y-auto">
+              {pipelines.map((pl) => {
+                const Icon = PIPELINE_ICON[pl.id] || Layers
+                return (
+                  <button
+                    key={pl.id}
+                    onClick={() => onPick(engine as Engine, persona ?? '', pl.id)}
+                    className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--gt-border)] bg-black/20 p-3 text-left transition-colors hover:border-[var(--gt-accent)]/60 hover:bg-white/5"
+                  >
+                    <Icon size={17} strokeWidth={1.75} className="shrink-0 text-[var(--gt-accent-light)]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-semibold text-zinc-100">{pl.title}</div>
+                      <div className="text-[11px] leading-snug text-zinc-500">{pl.description}</div>
                     </div>
                   </button>
                 )

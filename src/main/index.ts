@@ -28,12 +28,15 @@ import {
   hasAgents as repoHasAgents,
   runAgent,
   runTicketAgent,
+  runPrAgent,
+  listPipelines,
   listRuns,
   cancelRun,
   removeWorktree,
   onAgentEvent,
   loadPersistedRuns,
   type Engine,
+  type PrAgentKind,
 } from './agents'
 import {
   readSchedules,
@@ -353,17 +356,29 @@ ipcMain.handle('activity:clear', () => clearActivity())
 ipcMain.handle('snippets:list', () => readSnippets())
 ipcMain.handle('snippets:save', (_e, list: Snippet[]) => writeSnippets(list))
 ipcMain.handle('agents:list', () => readAgents(repoRootOf(cur().cwd)))
+ipcMain.handle('agents:pipelines', () => listPipelines())
 ipcMain.handle('personas:list', () => readPersonas(repoRootOf(cur().cwd)))
-ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine, persona?: string) =>
-  runAgent(repoRootOf(cur().cwd), agentId, engine, persona),
+ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine, persona?: string, pipeline?: string) =>
+  runAgent(repoRootOf(cur().cwd), agentId, engine, persona, pipeline),
 )
-ipcMain.handle('agents:run-ticket', (_e, slug: string, engine: Engine, persona?: string) => {
+ipcMain.handle('agents:run-ticket', (_e, slug: string, engine: Engine, persona?: string, pipeline?: string) => {
   const root = repoRootOf(cur().cwd)
   const t = getTicket(root, slug)
   return t
-    ? runTicketAgent(root, { id: t.id, title: t.title, body: t.body }, engine, persona)
+    ? runTicketAgent(root, { id: t.id, title: t.title, body: t.body }, engine, persona, pipeline)
     : { error: 'ticket not found' }
 })
+ipcMain.handle(
+  'agents:run-pr',
+  (
+    _e,
+    pr: { iid: number; sourceBranch: string; title?: string; webUrl?: string },
+    kind: PrAgentKind,
+    engine: Engine,
+    persona?: string,
+    pipeline?: string,
+  ) => runPrAgent(repoRootOf(cur().cwd), pr, kind, engine, persona, pipeline),
+)
 ipcMain.handle('agents:runs', () => listRuns())
 ipcMain.handle('agents:cancel', (_e, runId: string) => cancelRun(runId))
 ipcMain.handle('agents:remove-worktree', (_e, runId: string) => removeWorktree(runId))

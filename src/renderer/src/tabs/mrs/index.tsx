@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { GitPullRequest, TriangleAlert, GitBranch, ArrowUpRight } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import { MrDetailView } from '../../components/MrDetail'
+import { PrAgentActions } from '../../components/PrAgentActions'
 import { verdictTone, testTone, stateTone } from '../../lib/badges'
 import type { Tab, Mr, TabContext } from '../../lib/types'
 
@@ -42,16 +43,16 @@ function MrList({ mrs, onOpen }: { mrs: Mr[] | null; onOpen: (iid: number) => vo
                 {m.author && <span className="text-zinc-600">· @{m.author}</span>}
               </div>
             </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                window.gt.openExternal(m.webUrl)
-              }}
-              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
-            >
-              open
-              <ArrowUpRight size={12} strokeWidth={2} />
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+              <PrAgentActions pr={m} />
+              <button
+                onClick={() => window.gt.openExternal(m.webUrl)}
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+              >
+                open
+                <ArrowUpRight size={12} strokeWidth={2} />
+              </button>
+            </div>
           </div>
         </div>
       ))}

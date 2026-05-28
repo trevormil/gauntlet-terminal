@@ -13,6 +13,7 @@ import parseDiff from 'parse-diff'
 import hljs from 'highlight.js/lib/common'
 import { Badge } from './ui'
 import { Markdown } from './Markdown'
+import { PrAgentActions } from './PrAgentActions'
 import { stateTone, verdictTone, testTone, sevTone } from '../lib/badges'
 import type { MrDetail, Finding } from '../lib/types'
 
@@ -400,13 +401,16 @@ export function MrDetailView({
         <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-100">{mr.title}</span>
         <Badge tone={stateTone(mr.state)}>{mr.state}</Badge>
         {mr.draft && <Badge tone="warn">draft</Badge>}
-        <button
-          onClick={() => window.gt.openExternal(mr.webUrl)}
-          className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
-        >
-          open
-          <ArrowUpRight size={12} strokeWidth={2} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <PrAgentActions pr={mr} />
+          <button
+            onClick={() => window.gt.openExternal(mr.webUrl)}
+            className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+          >
+            open
+            <ArrowUpRight size={12} strokeWidth={2} />
+          </button>
+        </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--gt-border)] px-4 py-1.5">
         {sub(

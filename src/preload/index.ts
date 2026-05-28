@@ -39,10 +39,18 @@ const gt = {
   agents: {
     list: () => ipcRenderer.invoke('agents:list'),
     personas: () => ipcRenderer.invoke('personas:list'),
-    run: (id: string, engine?: string, persona?: string) =>
-      ipcRenderer.invoke('agents:run', id, engine, persona),
-    runTicket: (slug: string, engine: string, persona?: string) =>
-      ipcRenderer.invoke('agents:run-ticket', slug, engine, persona),
+    pipelines: () => ipcRenderer.invoke('agents:pipelines'),
+    run: (id: string, engine?: string, persona?: string, pipeline?: string) =>
+      ipcRenderer.invoke('agents:run', id, engine, persona, pipeline),
+    runTicket: (slug: string, engine: string, persona?: string, pipeline?: string) =>
+      ipcRenderer.invoke('agents:run-ticket', slug, engine, persona, pipeline),
+    runPr: (
+      pr: { iid: number; sourceBranch: string; title?: string; webUrl?: string },
+      kind: 'review' | 'iterate',
+      engine: string,
+      persona?: string,
+      pipeline?: string,
+    ) => ipcRenderer.invoke('agents:run-pr', pr, kind, engine, persona, pipeline),
     runs: () => ipcRenderer.invoke('agents:runs'),
     cancel: (runId: string) => ipcRenderer.invoke('agents:cancel', runId),
     removeWorktree: (runId: string) => ipcRenderer.invoke('agents:remove-worktree', runId),
