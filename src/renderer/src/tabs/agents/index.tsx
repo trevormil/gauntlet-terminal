@@ -8,18 +8,16 @@ import {
   Square,
   Trash2,
   FolderOpen,
+  Clock,
   type LucideIcon,
 } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import type { BadgeTone } from '../../components/ui'
-import type { Tab, TabContext, Agent, AgentRun } from '../../lib/types'
+import type { Tab, TabContext, Agent, AgentRun, Schedule, Engine, Cadence } from '../../lib/types'
 
-const AGENT_ICON: Record<string, LucideIcon> = {
-  BookText,
-  ScanSearch,
-  ListChecks,
-  Bot,
-}
+const AGENT_ICON: Record<string, LucideIcon> = { BookText, ScanSearch, ListChecks, Bot }
+const ENGINES: Engine[] = ['codex', 'claude']
+const CADENCES: (Cadence | 'off')[] = ['off', 'hourly', 'daily', 'weekly']
 const statusTone = (s: string): BadgeTone =>
   s === 'done' ? 'green' : s === 'failed' ? 'red' : s === 'canceled' ? 'mute' : 'blue'
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
@@ -34,12 +32,17 @@ function reltime(ts: number): string {
 function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [runs, setRuns] = useState<AgentRun[]>([])
+  const [schedules, setSchedules] = useState<Schedule[]>([])
   const [outputs, setOutputs] = useState<Record<string, string>>({})
   const [sel, setSel] = useState<string | null>(null)
+  const [engine, setEngine] = useState<Engine>('codex')
   const logRef = useRef<HTMLPreElement>(null)
+
+  const refreshSchedules = () => window.gt.schedules.list().then(setSchedules)
 
   useEffect(() => {
     window.gt.agents.list().then(setAgents)
+    refreshSchedules()
     window.gt.agents.runs().then((rs) => {
       setRuns(rs)
       setOutputs((o) => {
@@ -74,15 +77,16 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     () => new Set(runs.filter((r) => r.status === 'running').map((r) => r.agentId)),
     [runs],
   )
+  const scheduleFor = (id: string) =>
+    schedules.find((s) => s.repoRoot === ctx.repoRoot && s.agentId === id) || null
 
-  // auto-scroll the log when the selected run's output grows
   useEffect(() => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [sel, selectedRun && outputs[selectedRun.id]])
 
   const run = async (id: string) => {
-    const r = await window.gt.agents.run(id)
+    const r = await window.gt.agents.run(id, engine)
     if ('error' in r) {
       setOutputs((o) => ({ ...o, __err: r.error }))
       return
@@ -91,30 +95,52 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     setSel(r.id)
   }
 
+  const setCadence = async (a: Agent, cadence: Cadence | 'off') => {
+    const existing = scheduleFor(a.id)
+    if (existing) await window.gt.schedules.remove(existing.id)
+    if (cadence !== 'off')
+      await window.gt.schedules.add({ agentId: a.id, agentTitle: a.title, engine, cadence })
+    refreshSchedules()
+  }
+
+  const sel2 =
+    'cursor-pointer appearance-none rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none'
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--gt-bg)]">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
         <Bot size={14} strokeWidth={2} className="text-zinc-400" />
         <span className="text-[12px] font-semibold text-zinc-200">Agents</span>
         <span className="text-[11px] text-zinc-600">
-          codex · own worktree · opens a PR · {ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}
+          own worktree · opens a PR · {ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}
         </span>
+        <div className="flex-1" />
+        <span className="text-[10px] uppercase tracking-wide text-zinc-600">engine</span>
+        <div className="flex rounded-md border border-[var(--gt-border)] p-0.5">
+          {ENGINES.map((e) => (
+            <button
+              key={e}
+              onClick={() => setEngine(e)}
+              className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                engine === e ? 'bg-[var(--gt-accent)]/20 text-zinc-100' : 'text-zinc-500 hover:text-zinc-200'
+              }`}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* agents + runs (left) */}
-        <div className="flex w-[42%] min-w-[320px] flex-col border-r border-[var(--gt-border)]">
-          <div className="shrink-0 space-y-2 overflow-y-auto p-3" style={{ maxHeight: '55%' }}>
+        <div className="flex w-[44%] min-w-[340px] flex-col border-r border-[var(--gt-border)]">
+          <div className="shrink-0 space-y-2 overflow-y-auto p-3" style={{ maxHeight: '58%' }}>
             {agents === null ? (
               <div className="p-3 text-[12px] text-zinc-600">Loading…</div>
-            ) : agents.length === 0 ? (
-              <div className="p-3 text-[12px] text-zinc-600">
-                No agents. Define them in <span className="font-mono">.agents/agents.json</span>.
-              </div>
             ) : (
               agents.map((a) => {
                 const Icon = AGENT_ICON[a.icon || ''] || Bot
                 const busy = runningByAgent.has(a.id)
+                const sched = scheduleFor(a.id)
                 return (
                   <div
                     key={a.id}
@@ -146,6 +172,27 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                         )}
                       </button>
                     </div>
+                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-zinc-600">
+                      <Clock size={11} strokeWidth={2} />
+                      <span>schedule</span>
+                      <select
+                        value={sched?.cadence || 'off'}
+                        onChange={(e) => setCadence(a, e.target.value as Cadence | 'off')}
+                        className={sel2}
+                      >
+                        {CADENCES.map((c) => (
+                          <option key={c} value={c} className="bg-[var(--gt-panel)] text-zinc-200">
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                      {sched && (
+                        <span className="text-zinc-600">
+                          · {sched.engine}
+                          {sched.lastRun ? ` · last ${reltime(sched.lastRun)} ago` : ' · pending'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )
               })
@@ -169,7 +216,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                 >
                   <Badge tone={statusTone(r.status)}>{r.status}</Badge>
                   <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-200">{r.agentTitle}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-zinc-600">{r.branch.split('/').pop()}</span>
+                  <span className="shrink-0 text-[9.5px] uppercase text-zinc-600">{r.engine}</span>
                   <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{reltime(r.startedAt)}</span>
                 </button>
               ))
@@ -177,7 +224,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
           </div>
         </div>
 
-        {/* selected run output (right) */}
         <div className="flex min-w-0 flex-1 flex-col">
           {!selectedRun ? (
             <div className="flex h-full items-center justify-center text-[12px] text-zinc-600">
@@ -188,6 +234,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
               <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
                 <Badge tone={statusTone(selectedRun.status)}>{selectedRun.status}</Badge>
                 <span className="text-[12px] font-semibold text-zinc-100">{selectedRun.agentTitle}</span>
+                <span className="text-[9.5px] uppercase text-zinc-600">{selectedRun.engine}</span>
                 <span className="font-mono text-[10.5px] text-zinc-600">{selectedRun.branch}</span>
                 <div className="flex-1" />
                 {selectedRun.status === 'running' && (
@@ -208,9 +255,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                 </button>
                 {selectedRun.status !== 'running' && (
                   <button
-                    onClick={async () => {
-                      await window.gt.agents.removeWorktree(selectedRun.id)
-                    }}
+                    onClick={() => window.gt.agents.removeWorktree(selectedRun.id)}
                     title="Remove the worktree (branch/PR stay)"
                     className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-500 hover:border-[var(--gt-red)]/60 hover:text-[var(--gt-red)]"
                   >

@@ -48,7 +48,7 @@ export const activityTone = (k: string): BadgeTone =>
     ? 'green'
     : k === 'ticket-filed'
       ? 'accent'
-      : k === 'pr-verdict'
+      : k === 'pr-verdict' || k === 'agent-run'
         ? 'blue'
         : k === 'error'
           ? 'red'

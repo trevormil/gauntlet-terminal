@@ -27,11 +27,22 @@ import {
   readAgents,
   hasAgents as repoHasAgents,
   runAgent,
+  runTicketAgent,
   listRuns,
   cancelRun,
   removeWorktree,
   onAgentEvent,
+  type Engine,
 } from './agents'
+import {
+  readSchedules,
+  addSchedule,
+  removeSchedule,
+  toggleSchedule,
+  markRun,
+  dueSchedules,
+  type Cadence,
+} from './schedules'
 
 const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
@@ -166,6 +177,7 @@ function watchSession() {
 type TurnWatch = { file: string; mtime: number; lastTurnId: string }
 const turnWatch = new Map<string, TurnWatch>()
 let activityTimer: ReturnType<typeof setInterval> | null = null
+let scheduleTimer: ReturnType<typeof setInterval> | null = null
 function pollActivity() {
   for (const [key, s] of sessions) {
     const sid = s.pinned.sessionId
@@ -250,6 +262,14 @@ function createWindow() {
   onActivity((ev) => send('activity:event', ev))
   onAgentEvent((channel, payload) => send(channel, payload))
   if (!activityTimer) activityTimer = setInterval(pollActivity, 1500)
+  // fire any due scheduled agent runs (interval-based cadence)
+  if (!scheduleTimer)
+    scheduleTimer = setInterval(() => {
+      for (const s of dueSchedules()) {
+        const r = runAgent(s.repoRoot, s.agentId, s.engine)
+        if (!('error' in r)) markRun(s.id)
+      }
+    }, 60_000)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -297,10 +317,29 @@ ipcMain.handle('activity:clear', () => clearActivity())
 ipcMain.handle('snippets:list', () => readSnippets())
 ipcMain.handle('snippets:save', (_e, list: Snippet[]) => writeSnippets(list))
 ipcMain.handle('agents:list', () => readAgents(repoRootOf(cur().cwd)))
-ipcMain.handle('agents:run', (_e, agentId: string) => runAgent(repoRootOf(cur().cwd), agentId))
+ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine) =>
+  runAgent(repoRootOf(cur().cwd), agentId, engine),
+)
+ipcMain.handle('agents:run-ticket', (_e, slug: string, engine: Engine) => {
+  const root = repoRootOf(cur().cwd)
+  const t = getTicket(root, slug)
+  return t ? runTicketAgent(root, { id: t.id, title: t.title, body: t.body }, engine) : { error: 'ticket not found' }
+})
 ipcMain.handle('agents:runs', () => listRuns())
 ipcMain.handle('agents:cancel', (_e, runId: string) => cancelRun(runId))
 ipcMain.handle('agents:remove-worktree', (_e, runId: string) => removeWorktree(runId))
+ipcMain.handle('schedules:list', () => readSchedules())
+ipcMain.handle(
+  'schedules:add',
+  (_e, input: { agentId: string; agentTitle: string; engine: Engine; cadence: Cadence }) =>
+    addSchedule({
+      repoRoot: repoRootOf(cur().cwd),
+      repoLabel: repoForCwd(cur().cwd)?.path || basename(repoRootOf(cur().cwd) || ''),
+      ...input,
+    }),
+)
+ipcMain.handle('schedules:remove', (_e, id: string) => removeSchedule(id))
+ipcMain.handle('schedules:toggle', (_e, id: string, enabled: boolean) => toggleSchedule(id, enabled))
 // inject text into the ACTIVE session's terminal (snippet → prompt)
 ipcMain.on('pty:type', (_e, text: string) => {
   try {
@@ -409,6 +448,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (watchTimer) clearInterval(watchTimer)
   if (activityTimer) clearInterval(activityTimer)
+  if (scheduleTimer) clearInterval(scheduleTimer)
   for (const s of sessions.values()) s.pty.kill()
   sessions.clear()
   if (process.platform !== 'darwin') app.quit()

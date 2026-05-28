@@ -33,6 +33,7 @@ export type ActivityKind =
   | 'ticket-filed'
   | 'pr-verdict'
   | 'session-start'
+  | 'agent-run'
   | 'error'
   | 'info'
 export type ActivityEvent = {
@@ -107,6 +108,7 @@ export type NewTicket = { title: string; type: string; priority: string; status:
 
 export type Snippet = { id: string; title: string; body: string }
 
+export type Engine = 'codex' | 'claude'
 export type Agent = {
   id: string
   title: string
@@ -114,12 +116,14 @@ export type Agent = {
   icon?: string
   prompt: string
   opensPr?: boolean
+  engine?: Engine
 }
 export type AgentRunStatus = 'running' | 'done' | 'failed' | 'canceled'
 export type AgentRun = {
   id: string
   agentId: string
   agentTitle: string
+  engine: Engine
   status: AgentRunStatus
   startedAt: number
   endedAt?: number
@@ -128,6 +132,19 @@ export type AgentRun = {
   worktree: string
   branch: string
   output: string
+}
+
+export type Cadence = 'hourly' | 'daily' | 'weekly'
+export type Schedule = {
+  id: string
+  repoRoot: string
+  repoLabel: string
+  agentId: string
+  agentTitle: string
+  engine: Engine
+  cadence: Cadence
+  enabled: boolean
+  lastRun?: number
 }
 
 export type Review = {
@@ -250,12 +267,24 @@ export type GtApi = {
   typeIntoActive: (text: string) => void
   agents: {
     list: () => Promise<Agent[]>
-    run: (id: string) => Promise<AgentRun | { error: string }>
+    run: (id: string, engine?: Engine) => Promise<AgentRun | { error: string }>
+    runTicket: (slug: string, engine: Engine) => Promise<AgentRun | { error: string }>
     runs: () => Promise<AgentRun[]>
     cancel: (runId: string) => Promise<boolean>
     removeWorktree: (runId: string) => Promise<boolean>
     onStatus: (cb: (run: AgentRun) => void) => () => void
     onOutput: (cb: (p: { runId: string; chunk: string }) => void) => () => void
+  }
+  schedules: {
+    list: () => Promise<Schedule[]>
+    add: (input: {
+      agentId: string
+      agentTitle: string
+      engine: Engine
+      cadence: Cadence
+    }) => Promise<Schedule>
+    remove: (id: string) => Promise<boolean>
+    toggle: (id: string, enabled: boolean) => Promise<boolean>
   }
   activity: {
     list: () => Promise<ActivityEvent[]>

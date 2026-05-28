@@ -34,10 +34,12 @@ const gt = {
   },
   typeIntoActive: (text: string) => ipcRenderer.send('pty:type', text),
 
-  // on-demand codex agents
+  // on-demand codex/claude agents
   agents: {
     list: () => ipcRenderer.invoke('agents:list'),
-    run: (id: string) => ipcRenderer.invoke('agents:run', id),
+    run: (id: string, engine?: string) => ipcRenderer.invoke('agents:run', id, engine),
+    runTicket: (slug: string, engine: string) =>
+      ipcRenderer.invoke('agents:run-ticket', slug, engine),
     runs: () => ipcRenderer.invoke('agents:runs'),
     cancel: (runId: string) => ipcRenderer.invoke('agents:cancel', runId),
     removeWorktree: (runId: string) => ipcRenderer.invoke('agents:remove-worktree', runId),
@@ -51,6 +53,14 @@ const gt = {
       ipcRenderer.on('agent:output', h)
       return () => ipcRenderer.removeListener('agent:output', h)
     },
+  },
+
+  // scheduled (cron) agent runs
+  schedules: {
+    list: () => ipcRenderer.invoke('schedules:list'),
+    add: (input: unknown) => ipcRenderer.invoke('schedules:add', input),
+    remove: (id: string) => ipcRenderer.invoke('schedules:remove', id),
+    toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('schedules:toggle', id, enabled),
   },
 
   // activity feed + notifications

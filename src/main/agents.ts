@@ -3,6 +3,10 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { emitActivity } from './events'
+import { repoForCwd } from './repo'
+
+export type Engine = 'codex' | 'claude'
 
 // On-demand Codex agents. Each runs in its own git worktree off the default
 // branch; codex does the work, files tickets, and opens the PR itself. We just
@@ -15,6 +19,7 @@ export type Agent = {
   icon?: string
   prompt: string
   opensPr?: boolean
+  engine?: Engine // default engine; overridable per run
 }
 
 export type AgentRunStatus = 'running' | 'done' | 'failed' | 'canceled'
@@ -22,6 +27,7 @@ export type AgentRun = {
   id: string
   agentId: string
   agentTitle: string
+  engine: Engine
   status: AgentRunStatus
   startedAt: number
   endedAt?: number
@@ -128,12 +134,24 @@ export function getRun(id: string): AgentRun | null {
   return runs.get(id) ?? null
 }
 
-export function runAgent(repoRoot: string, agentId: string): AgentRun | { error: string } {
-  const agent = readAgents(repoRoot).find((a) => a.id === agentId)
-  if (!agent) return { error: 'unknown agent' }
+// Build the engine command. codex needs -C; claude uses cwd. Both run through a
+// login shell so $PATH has brew/local bins, and with stdin = /dev/null (else
+// they block reading "additional input from stdin" on an empty pipe).
+function buildCmd(engine: Engine, worktree: string, prompt: string): string {
+  if (engine === 'claude') {
+    const bin = process.env.GT_CLAUDE_BIN || 'claude'
+    return `${bin} -p ${shq(prompt)} --dangerously-skip-permissions`
+  }
+  return `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(prompt)}`
+}
+
+type RunSpec = { id: string; title: string; prompt: string; engine: Engine }
+
+function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } {
+  if (!repoRoot) return { error: 'not a git repo' }
   const ts = Date.now()
-  const branch = `agent/${agent.id}-${ts}`
-  const worktree = join(WORKTREES, basename(repoRoot) || 'repo', `${agent.id}-${ts}`)
+  const branch = `agent/${spec.id}-${ts}`
+  const worktree = join(WORKTREES, basename(repoRoot) || 'repo', `${spec.id}-${ts}`)
   const base = defaultBase(repoRoot)
   try {
     execFileSync('git', ['-C', repoRoot, 'worktree', 'add', worktree, '-b', branch, base], {
@@ -143,34 +161,32 @@ export function runAgent(repoRoot: string, agentId: string): AgentRun | { error:
   } catch (e) {
     return { error: `worktree: ${(e as Error).message}` }
   }
-
+  const repoLabel = repoForCwd(repoRoot)?.path || basename(repoRoot)
   const run: AgentRun = {
     id: randomUUID(),
-    agentId,
-    agentTitle: agent.title,
+    agentId: spec.id,
+    agentTitle: spec.title,
+    engine: spec.engine,
     status: 'running',
     startedAt: ts,
     repoRoot,
     worktree,
     branch,
-    output: `▸ ${agent.title} · worktree ${worktree}\n▸ branch ${branch} (off ${base})\n▸ codex exec…\n\n`,
+    output: `▸ ${spec.title} · ${spec.engine} · worktree ${worktree}\n▸ branch ${branch} (off ${base})\n▸ running…\n\n`,
   }
   runs.set(run.id, run)
   emit('agent:status', run)
+  emitActivity(
+    { kind: 'agent-run', title: `Agent started · ${spec.title}`, detail: `${spec.engine} · ${repoLabel}`, repo: repoLabel, repoRoot },
+    { notify: false },
+  )
 
-  // run codex through a login shell so $PATH includes brew (codex isn't on a GUI
-  // app's default PATH)
-  const cmd = `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(agent.prompt)}`
-  // stdin must be /dev/null (not an open pipe): codex reads "additional input
-  // from stdin" and would block forever on an empty open pipe. ignore = EOF, so
-  // it proceeds with the prompt arg.
-  const p = spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
+  const p = spawn(LOGIN_SHELL, ['-l', '-c', buildCmd(spec.engine, worktree, spec.prompt)], {
     cwd: worktree,
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   procs.set(run.id, p)
-
   const append = (d: Buffer) => {
     run.output += d.toString()
     if (run.output.length > OUTPUT_CAP) run.output = run.output.slice(-OUTPUT_CAP)
@@ -184,6 +200,7 @@ export function runAgent(repoRoot: string, agentId: string): AgentRun | { error:
     run.endedAt = Date.now()
     procs.delete(run.id)
     emit('agent:status', run)
+    emitActivity({ kind: 'agent-run', title: `Agent failed · ${spec.title}`, detail: err.message, repo: repoLabel, repoRoot })
   })
   p.on('exit', (code) => {
     if (run.status !== 'canceled') run.status = code === 0 ? 'done' : 'failed'
@@ -191,8 +208,36 @@ export function runAgent(repoRoot: string, agentId: string): AgentRun | { error:
     run.exitCode = code ?? undefined
     procs.delete(run.id)
     emit('agent:status', run)
+    emitActivity({
+      kind: 'agent-run',
+      title: `Agent ${run.status} · ${spec.title}`,
+      detail: `${spec.engine} · ${run.branch}`,
+      repo: repoLabel,
+      repoRoot,
+    })
   })
   return run
+}
+
+export function runAgent(repoRoot: string, agentId: string, engine?: Engine): AgentRun | { error: string } {
+  const agent = readAgents(repoRoot).find((a) => a.id === agentId)
+  if (!agent) return { error: 'unknown agent' }
+  return runSpec(repoRoot, {
+    id: agent.id,
+    title: agent.title,
+    prompt: agent.prompt,
+    engine: engine || agent.engine || 'codex',
+  })
+}
+
+/** Turn a backlog ticket into an implementation run that opens a PR. */
+export function runTicketAgent(
+  repoRoot: string,
+  ticket: { id: number; title: string; body: string },
+  engine: Engine,
+): AgentRun | { error: string } {
+  const prompt = `Implement backlog ticket #${ticket.id}: ${ticket.title}\n\n${ticket.body}\n\nWork in this worktree on its branch. Implement the ticket end to end — keep changes surgical and add/adjust tests. Commit your work and open a PR that references ticket #${ticket.id}. If fully delivered set the ticket status to closed (else in-progress) and link the PR in its prs: field. End with a short summary of what changed and the PR URL.`
+  return runSpec(repoRoot, { id: `ticket-${ticket.id}`, title: `Implement #${ticket.id}`, prompt, engine })
 }
 
 export function cancelRun(runId: string): boolean {

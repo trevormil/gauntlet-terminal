@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Plus, Hand, ArrowUpRight, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Hand, ArrowUpRight, ChevronRight, ChevronDown, Bot } from 'lucide-react'
 import { Badge, badgeClasses } from './ui'
 import { Markdown } from './Markdown'
 import { statusTone, priorityTone, typeTone, horizonTone } from '../lib/badges'
 import type { BadgeTone } from './ui'
-import type { Ticket, TabContext } from '../lib/types'
+import type { Ticket, TabContext, Engine } from '../lib/types'
+
+const ENGINES: Engine[] = ['codex', 'claude']
 
 const STATUSES = ['open', 'in-progress', 'closed', 'stuck', 'icebox']
 const TYPES = ['feature', 'bug', 'security', 'docs', 'dx', 'testing', 'ux', 'performance']
@@ -143,6 +145,8 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
   const [fHitl, setFHitl] = useState(false)
   const [q, setQ] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(COLLAPSED_BY_DEFAULT))
+  const [agentEngine, setAgentEngine] = useState<Engine>('codex')
+  const [started, setStarted] = useState(false)
 
   const loadTickets = () => window.gt.tickets.list().then(setTickets)
   useEffect(() => {
@@ -331,6 +335,40 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                     <ArrowUpRight size={11} strokeWidth={2} />
                   </button>
                 ))}
+              </div>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="flex rounded-md border border-[var(--gt-border)] p-0.5">
+                  {ENGINES.map((e) => (
+                    <button
+                      key={e}
+                      onClick={() => setAgentEngine(e)}
+                      className={`rounded px-2 py-0.5 text-[10px] font-medium ${
+                        agentEngine === e
+                          ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
+                          : 'text-zinc-500 hover:text-zinc-200'
+                      }`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={async () => {
+                    const r = await window.gt.agents.runTicket(selected.slug, agentEngine)
+                    if (!('error' in r)) {
+                      setStarted(true)
+                      setTimeout(() => setStarted(false), 4000)
+                    }
+                  }}
+                  title="Spin up an agent in a worktree to implement this ticket and open a PR"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--gt-accent)]/50 bg-[var(--gt-accent)]/10 px-3 py-1 text-[12px] font-semibold text-[var(--gt-accent-light)] hover:bg-[var(--gt-accent)]/20"
+                >
+                  <Bot size={13} strokeWidth={2} />
+                  Implement → PR
+                </button>
+                {started && (
+                  <span className="text-[11px] text-[var(--gt-green)]">agent started · see the Agents tab</span>
+                )}
               </div>
               <Markdown>{selected.body}</Markdown>
             </div>

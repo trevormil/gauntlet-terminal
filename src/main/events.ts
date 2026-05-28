@@ -15,6 +15,7 @@ export type ActivityKind =
   | 'ticket-filed'
   | 'pr-verdict'
   | 'session-start'
+  | 'agent-run'
   | 'error'
   | 'info'
 
@@ -35,6 +36,7 @@ const NOTIFY: Record<ActivityKind, boolean> = {
   'task-complete': true,
   'ticket-filed': true,
   'pr-verdict': true,
+  'agent-run': true,
   error: true,
   'session-start': false,
   info: false,
