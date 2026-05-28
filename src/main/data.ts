@@ -48,10 +48,23 @@ export type SessionMeta = {
 // opus 4.x blended estimate ($/token). Cache reads are ~10% of input price.
 const PRICE = { input: 15 / 1e6, output: 75 / 1e6, cacheRead: 1.5 / 1e6 }
 
+// Context window per model. Opus 4.6/4.7 and Sonnet 4.5+ run the 1M window;
+// everything else (older Opus, Haiku, Claude 3.x) defaults to 200k.
+function modelContextWindow(model: string): number {
+  const m = model.toLowerCase()
+  if (/\[1m\]|-1m\b/.test(m)) return 1_000_000
+  if (/opus-4-[67]/.test(m)) return 1_000_000
+  if (/sonnet-4-[567]/.test(m)) return 1_000_000
+  return 200_000
+}
+
 function contextLimitFor(model: string, latestContext: number): number {
   if (process.env.GT_CONTEXT_LIMIT) return Number(process.env.GT_CONTEXT_LIMIT)
-  if (/\[1m\]|1m/i.test(model) || latestContext > 200_000) return 1_000_000
-  return 200_000
+  // start from the model's known window; self-correct upward if a session
+  // somehow carries more than mapped (so we never show >100%).
+  let limit = modelContextWindow(model)
+  while (latestContext > limit) limit = limit < 1_000_000 ? 1_000_000 : limit * 2
+  return limit
 }
 
 function summarizeToolInput(tool: string, input: Record<string, unknown>): string {
@@ -200,11 +213,25 @@ export function parseTranscriptFile(file: string, sessionId: string): Transcript
   }
 }
 
-/** Stats for the attached session (by id). */
+/**
+ * Stats for the attached session (by id). Cached by file mtime so the several
+ * widgets that poll the transcript share one parse and fast polling stays cheap
+ * — we only re-parse when the transcript actually grows.
+ */
+let tCache: { id: string; mtime: number; stats: TranscriptStats } | null = null
 export function readTranscriptStats(sessionId: string): TranscriptStats {
   const file = sessionId ? findSessionFile(sessionId) : null
   if (!file) return emptyStats(sessionId)
-  return parseTranscriptFile(file, sessionId)
+  let mtime = 0
+  try {
+    mtime = statSync(file).mtimeMs
+  } catch {
+    return emptyStats(sessionId)
+  }
+  if (tCache && tCache.id === sessionId && tCache.mtime === mtime) return tCache.stats
+  const stats = parseTranscriptFile(file, sessionId)
+  tCache = { id: sessionId, mtime, stats }
+  return stats
 }
 
 /** All sessions across all projects, newest first — for the entry picker. */
@@ -263,7 +290,15 @@ function fmField(md: string, key: string): string | null {
   return m ? m[1].trim() : null
 }
 
+let tddCache: { ts: number; info: TddInfo } | null = null
 export function readHarnessTdd(): TddInfo {
+  if (tddCache && Date.now() - tddCache.ts < 2000) return tddCache.info
+  const info = computeHarnessTdd()
+  tddCache = { ts: Date.now(), info }
+  return info
+}
+
+function computeHarnessTdd(): TddInfo {
   const empty: TddInfo = {
     ok: false,
     repo: '',

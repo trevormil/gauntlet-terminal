@@ -24,7 +24,7 @@ export type Usage = {
   ts: number
 }
 
-const TTL = 120_000
+const TTL = 30_000
 let cache: Usage | null = null
 let backoffUntil = 0
 

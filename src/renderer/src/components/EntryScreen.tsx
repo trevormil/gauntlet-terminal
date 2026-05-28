@@ -30,8 +30,8 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-y-auto bg-[var(--gt-bg)] p-8">
-      <div className="w-full max-w-2xl py-10">
+    <div className="h-full w-full overflow-y-auto bg-[var(--gt-bg)]">
+      <div className="mx-auto max-w-2xl px-8 py-10">
         <div className="mb-1 flex items-center gap-2">
           <span className="text-2xl text-[var(--gt-accent)]">◆</span>
           <h1 className="text-2xl font-bold tracking-tight">Gauntlet Terminal</h1>
@@ -95,7 +95,7 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {sessions.slice(0, 40).map((s) => (
+            {sessions.slice(0, 300).map((s) => (
               <button
                 key={s.id}
                 onClick={() => onChoose({ mode: 'resume', sessionId: s.id, cwd: s.cwd })}

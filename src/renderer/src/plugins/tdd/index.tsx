@@ -12,7 +12,7 @@ const plugin: Plugin<TddInfo> = {
   icon: '🧪',
   blurb: 'Latest code-review score + test status from the autopilot harness, with a stale flag.',
   order: 4,
-  intervalMs: 5000,
+  intervalMs: 2000,
   defaultEnabled: true,
   poll: (gt) => gt.harnessTdd(),
   render: (d) => {

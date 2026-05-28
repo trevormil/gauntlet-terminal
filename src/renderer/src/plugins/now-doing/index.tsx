@@ -7,7 +7,7 @@ const plugin: Plugin<TranscriptStats> = {
   icon: '⚡',
   blurb: "The agent's most recent tool call, tailed live from the transcript.",
   order: 2,
-  intervalMs: 1500,
+  intervalMs: 1000,
   defaultEnabled: true,
   poll: (gt) => gt.transcript(),
   render: (d) => {

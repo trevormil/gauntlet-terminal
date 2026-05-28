@@ -37,7 +37,7 @@ const plugin: Plugin<Usage> = {
   icon: '📊',
   blurb: 'Your Claude subscription 5-hour + weekly limits and overage — a live /usage summary.',
   order: 3,
-  intervalMs: 60_000,
+  intervalMs: 30_000,
   defaultEnabled: true,
   poll: (gt) => gt.usage(),
   render: (d) => {
