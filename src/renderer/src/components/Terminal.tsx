@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { Choice } from './EntryScreen'
 
 // Hosts the real Claude Code CLI: xterm.js renders, the PTY (main process) runs
@@ -36,10 +37,32 @@ export function TerminalPane({
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
+    term.loadAddon(new WebLinksAddon((_e, uri) => window.gt.openExternal(uri)))
     term.open(el)
     fit.fit()
 
     const gt = window.gt
+
+    // copy/paste: Cmd+C copies the selection, Cmd+V pastes into the pty.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown' || !e.metaKey) return true
+      if (e.key === 'c' && term.hasSelection()) {
+        gt.clipboardWrite(term.getSelection())
+        return false
+      }
+      if (e.key === 'v') {
+        gt.clipboardRead().then((t) => t && gt.pty.input(t))
+        return false
+      }
+      return true
+    })
+    // right-click: copy the selection if any, else paste (classic terminal UX).
+    const onContext = (e: MouseEvent) => {
+      e.preventDefault()
+      if (term.hasSelection()) gt.clipboardWrite(term.getSelection())
+      else gt.clipboardRead().then((t) => t && gt.pty.input(t))
+    }
+    el.addEventListener('contextmenu', onContext)
     // attach listeners BEFORE starting the pty so no early output is missed.
     const offData = gt.pty.onData((d) => term.write(d))
     const offExit = gt.pty.onExit(() => term.write('\r\n\x1b[2m── process exited ──\x1b[0m\r\n'))
@@ -69,6 +92,7 @@ export function TerminalPane({
 
     return () => {
       cancelAnimationFrame(raf)
+      el.removeEventListener('contextmenu', onContext)
       offData()
       offExit()
       onInput.dispose()

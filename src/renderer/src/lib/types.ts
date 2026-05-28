@@ -192,6 +192,8 @@ export type GtApi = {
   getMr: (iid: number) => Promise<MrDetail | null>
   getMrDiff: (iid: number) => Promise<string>
   openExternal: (url: string) => Promise<void>
+  clipboardWrite: (text: string) => Promise<void>
+  clipboardRead: () => Promise<string>
   notes: {
     read: (scope: 'repo' | 'global') => Promise<string>
     write: (scope: 'repo' | 'global', content: string) => Promise<boolean>

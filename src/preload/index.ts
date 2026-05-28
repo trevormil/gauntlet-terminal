@@ -58,6 +58,8 @@ const gt = {
   getMr: (iid: number) => ipcRenderer.invoke('mrs:get', iid),
   getMrDiff: (iid: number) => ipcRenderer.invoke('mrs:diff', iid),
   openExternal: (url: string) => ipcRenderer.invoke('open:external', url),
+  clipboardWrite: (text: string) => ipcRenderer.invoke('clipboard:write', text),
+  clipboardRead: (): Promise<string> => ipcRenderer.invoke('clipboard:read'),
 
   notes: {
     read: (scope: 'repo' | 'global') => ipcRenderer.invoke('notes:read', scope),

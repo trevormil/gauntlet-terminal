@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -206,6 +206,8 @@ ipcMain.handle('mrs:list', () => listMrs(repoRootOf(pinned.cwd)))
 ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(pinned.cwd), iid))
 ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(pinned.cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
+ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
+ipcMain.handle('clipboard:read', () => clipboard.readText())
 
 // ---- notes (repo-bound + global, persisted) ----
 ipcMain.handle('notes:read', (_e, scope: NotesScope) => readNotes(scope, repoRootOf(pinned.cwd)))
