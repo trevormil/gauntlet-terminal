@@ -2,17 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import parseDiff from 'parse-diff'
 import { Badge } from './ui'
 import { Markdown } from './Markdown'
+import { stateTone, verdictTone, testTone, sevTone } from '../lib/badges'
 import type { MrDetail, Finding } from '../lib/types'
-
-type Tone = 'ok' | 'warn' | 'bad' | 'mute'
-const stateTone = (s: string): Tone => (s === 'merged' ? 'ok' : s === 'closed' ? 'bad' : 'warn')
-const verdictTone = (v: string): Tone =>
-  v === 'approve' ? 'ok' : v === 'request-changes' || v === 'blocked' ? 'bad' : 'mute'
-const testTone = (s: string): Tone => (s === 'pass' ? 'ok' : s === 'fail' ? 'bad' : 'mute')
-const sevTone = (s: string): Tone => {
-  const x = (s || '').toLowerCase()
-  return x === 'critical' || x === 'high' ? 'bad' : x === 'medium' ? 'warn' : 'mute'
-}
 
 // per-MR "viewed file" set, persisted to localStorage
 function useViewed(scope: string) {

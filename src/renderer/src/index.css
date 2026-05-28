@@ -1,11 +1,19 @@
 @import 'tailwindcss';
 
 :root {
-  --gt-bg: #0a0a0f;
-  --gt-panel: #12121a;
-  --gt-border: #232334;
-  --gt-accent: #7c5cff;
+  /* palette inherited from the autopilot dashboard for a cohesive look */
+  --gt-bg: #0b0b10;
+  --gt-panel: #131318;
+  --gt-surface-hover: #1a1a22;
+  --gt-border: #26262e;
+  --gt-accent: #7c6ef6;
+  --gt-accent-light: #a89eff;
   --gt-accent-2: #00e0c6;
+  --gt-red: #f87171;
+  --gt-yellow: #fbbf24;
+  --gt-green: #4ade80;
+  --gt-blue: #60a5fa;
+  --gt-text-muted: #6b6b7b;
 }
 
 html,

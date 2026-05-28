@@ -2,19 +2,12 @@ import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui'
 import { Markdown } from '../../components/Markdown'
 import { MrDetailView } from '../../components/MrDetail'
+import { statusTone, priorityTone, typeTone, verdictTone, testTone, stateTone } from '../../lib/badges'
 import type { Tab, Ticket, Mr, TabContext } from '../../lib/types'
 
 const STATUSES = ['open', 'in-progress', 'closed', 'stuck', 'icebox']
 const TYPES = ['feature', 'bug', 'security', 'docs', 'dx', 'testing', 'ux', 'performance']
 const PRIORITIES = ['critical', 'high', 'medium', 'low']
-
-type Tone = 'ok' | 'warn' | 'bad' | 'mute'
-const statusTone = (s: string): Tone =>
-  s === 'closed' ? 'ok' : s === 'in-progress' ? 'warn' : s === 'stuck' ? 'bad' : 'mute'
-const verdictTone = (v: string): Tone =>
-  v === 'approve' ? 'ok' : v === 'request-changes' || v === 'blocked' ? 'bad' : 'mute'
-const stateTone = (s: string): Tone =>
-  s === 'merged' ? 'ok' : s === 'closed' ? 'bad' : 'warn'
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -123,11 +116,7 @@ function MrList({ mrs, onOpen }: { mrs: Mr[] | null; onOpen: (iid: number) => vo
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
                 <Badge tone={stateTone(m.state)}>{m.state}</Badge>
                 {m.review && <Badge tone={verdictTone(m.review.verdict)}>{m.review.verdict}</Badge>}
-                {m.review && (
-                  <Badge tone={m.review.testStatus === 'pass' ? 'ok' : m.review.testStatus === 'fail' ? 'bad' : 'mute'}>
-                    tests {m.review.testStatus}
-                  </Badge>
-                )}
+                {m.review && <Badge tone={testTone(m.review.testStatus)}>tests {m.review.testStatus}</Badge>}
                 {m.review?.overall != null && <span className="text-zinc-400">score {m.review.overall}</span>}
                 {m.review?.stale && <Badge tone="warn">⚠ stale</Badge>}
                 <span className="text-zinc-600">⎇ {m.sourceBranch}</span>
@@ -280,6 +269,9 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
                   >
                     <span className="font-mono text-[11px] text-zinc-600">#{t.id}</span>
                     <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{t.title}</span>
+                    {t.priority !== 'medium' && (
+                      <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>
+                    )}
                     <Badge tone={statusTone(t.status)}>{t.status}</Badge>
                   </button>
                 ))
@@ -299,8 +291,8 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
                   <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-600">
                     <span className="font-mono">#{selected.id}</span>
                     <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
-                    <Badge tone="mute">{selected.type}</Badge>
-                    <Badge tone="mute">{selected.priority}</Badge>
+                    <Badge tone={typeTone(selected.type)}>{selected.type}</Badge>
+                    <Badge tone={priorityTone(selected.priority)}>{selected.priority}</Badge>
                   </div>
                   <h1 className="mb-2 text-lg font-bold text-zinc-100">{selected.title}</h1>
                   <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-600">

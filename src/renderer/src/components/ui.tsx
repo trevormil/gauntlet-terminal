@@ -57,22 +57,33 @@ export function Row({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
-export function Badge({
-  tone,
-  children,
-}: {
-  tone: 'ok' | 'warn' | 'bad' | 'mute'
-  children: ReactNode
-}) {
-  const map = {
-    ok: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-    warn: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-    bad: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-    mute: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/25',
-  }
+export type BadgeTone =
+  | 'ok'
+  | 'warn'
+  | 'bad'
+  | 'mute'
+  | 'red'
+  | 'yellow'
+  | 'green'
+  | 'blue'
+  | 'accent'
+
+const BADGE_MAP: Record<BadgeTone, string> = {
+  ok: 'bg-[var(--gt-green)]/12 text-[var(--gt-green)] border-[var(--gt-green)]/25',
+  green: 'bg-[var(--gt-green)]/12 text-[var(--gt-green)] border-[var(--gt-green)]/25',
+  warn: 'bg-[var(--gt-yellow)]/12 text-[var(--gt-yellow)] border-[var(--gt-yellow)]/25',
+  yellow: 'bg-[var(--gt-yellow)]/12 text-[var(--gt-yellow)] border-[var(--gt-yellow)]/25',
+  bad: 'bg-[var(--gt-red)]/12 text-[var(--gt-red)] border-[var(--gt-red)]/25',
+  red: 'bg-[var(--gt-red)]/12 text-[var(--gt-red)] border-[var(--gt-red)]/25',
+  blue: 'bg-[var(--gt-blue)]/12 text-[var(--gt-blue)] border-[var(--gt-blue)]/25',
+  accent: 'bg-[var(--gt-accent)]/15 text-[var(--gt-accent-light)] border-[var(--gt-accent)]/30',
+  mute: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/25',
+}
+
+export function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
   return (
     <span
-      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${map[tone]}`}
+      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${BADGE_MAP[tone]}`}
     >
       {children}
     </span>
