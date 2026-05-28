@@ -9,7 +9,7 @@ import {
   renameSync,
 } from 'node:fs'
 import { join, resolve, sep, dirname } from 'node:path'
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 
 // Scoped file access for the Files tab. Every path is validated to stay within
 // the root (the attached session's repo/cwd) — no traversal out.
@@ -27,13 +27,36 @@ const IGNORE = new Set([
   '.DS_Store',
 ])
 
-export type Entry = { name: string; path: string; dir: boolean }
+export type Entry = { name: string; path: string; dir: boolean; ignored?: boolean }
 
 function safe(root: string, rel: string): string | null {
   const r = resolve(root)
   const p = resolve(root, rel || '.')
   if (p !== r && !p.startsWith(r + sep)) return null
   return p
+}
+
+// Which of these repo-relative paths git ignores. Best-effort: empty set if the
+// root isn't a git repo (check-ignore exits non-zero → no stdout to parse).
+function gitIgnored(root: string, relPaths: string[]): Set<string> {
+  if (relPaths.length === 0) return new Set()
+  const parse = (out: unknown) =>
+    new Set(
+      typeof out === 'string'
+        ? out.split('\n').map((s) => s.trim()).filter(Boolean)
+        : [],
+    )
+  try {
+    return parse(
+      execFileSync('git', ['-C', root, 'check-ignore', '--', ...relPaths], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+    )
+  } catch (e) {
+    // exit 1 = nothing ignored, exit 128 = not a repo — both throw with empty stdout
+    return parse((e as { stdout?: string }).stdout)
+  }
 }
 
 export function listDir(root: string, rel: string): Entry[] {
@@ -56,6 +79,8 @@ export function listDir(root: string, rel: string): Entry[] {
     }
     out.push({ name: n, path: rel ? join(rel, n) : n, dir })
   }
+  const ignored = gitIgnored(root, out.map((e) => e.path))
+  for (const e of out) if (ignored.has(e.path)) e.ignored = true
   return out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1))
 }
 
@@ -126,33 +151,37 @@ export function removeEntry(root: string, rel: string): boolean {
 }
 
 export type SearchHit = { file: string; line: number; text: string }
+const MAX_HITS = 300
 export function searchRepo(root: string, query: string): Promise<SearchHit[]> {
   return new Promise((res) => {
-    if (!query.trim()) return res([])
+    const q = query.trim()
+    if (q.length < 2) return res([]) // 1-char queries match everything — skip
     const parse = (out: string): SearchHit[] =>
       out
         .split('\n')
         .filter(Boolean)
-        .slice(0, 400)
+        .slice(0, MAX_HITS)
         .map((l) => {
           const m = l.match(/^(.*?):(\d+):(.*)$/)
           return m ? { file: m[1], line: Number(m[2]), text: m[3].slice(0, 240) } : null
         })
         .filter((x): x is SearchHit => !!x)
-    // git grep first (respects .gitignore, fast). Falls back to grep -r.
+    // git grep first (respects .gitignore, fast). `-F` = fixed string (literal,
+    // no regex surprises from special chars); `-m 30` caps matches per file so a
+    // common term can't flood the buffer. Falls back to plain grep outside a repo.
     execFile(
       'git',
-      ['-C', root, 'grep', '-n', '-I', '--no-color', '--untracked', '-i', '-e', query],
-      { timeout: 10_000, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8' },
+      ['-C', root, 'grep', '-n', '-I', '--no-color', '--untracked', '-F', '-i', '-m', '30', '-e', q],
+      { timeout: 8_000, maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' },
       (gerr, gout) => {
         if (gout) return res(parse(gout))
         // git grep exit 1 = no matches (in a repo). If git failed entirely
         // (not a repo), try plain grep.
-        if (gerr && (gerr as any).code !== 1) {
+        if (gerr && (gerr as { code?: number }).code !== 1) {
           execFile(
             'grep',
-            ['-rnI', '-i', '--exclude-dir=.git', '--exclude-dir=node_modules', query, root],
-            { timeout: 10_000, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8' },
+            ['-rnI', '-F', '-i', '-m', '30', '--exclude-dir=.git', '--exclude-dir=node_modules', q, root],
+            { timeout: 8_000, maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' },
             (_e, out) => res(out ? parse(out.replaceAll(root + sep, '')) : []),
           )
           return

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   FolderTree,
   ChevronDown,
@@ -13,16 +13,17 @@ import {
 import { langs } from '@uiw/codemirror-extensions-langs'
 import type { Extension } from '@codemirror/state'
 import { CodeEditor } from '../../components/CodeEditor'
+import { fileIcon } from '../../lib/fileIcons'
 import type { Tab, TabContext, FileEntry, SearchHit } from '../../lib/types'
 
-const EXT: Record<string, keyof typeof langs> = {
+const EXT: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx', mjs: 'javascript', cjs: 'javascript',
   json: 'json', md: 'markdown', mdx: 'markdown', css: 'css', scss: 'sass', less: 'less', html: 'html',
   py: 'python', rs: 'rust', go: 'go', yaml: 'yaml', yml: 'yaml', sql: 'sql', sh: 'shell', bash: 'shell',
   zsh: 'shell', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', php: 'php', rb: 'ruby', toml: 'toml', xml: 'xml',
 }
 function langFor(path: string): Extension[] {
-  const key = EXT[path.split('.').pop()?.toLowerCase() || '']
+  const key = EXT[path.split('.').pop()?.toLowerCase() || ''] as keyof typeof langs | undefined
   try {
     return key && langs[key] ? [langs[key]()] : []
   } catch {
@@ -67,14 +68,16 @@ function TreeNode({
     setOpen((o) => !o)
   }
   const sel = entry.dir ? selectedDir === entry.path : active === entry.path
+  const { Icon, cls } = fileIcon(entry.name, entry.dir, open)
   return (
     <>
       <div
         onClick={click}
         style={{ paddingLeft: depth * 12 + 8 }}
+        title={entry.ignored ? `${entry.name} · git-ignored` : entry.name}
         className={`group flex cursor-pointer items-center gap-1 py-[3px] pr-1.5 text-[12px] hover:bg-white/5 ${
           sel ? 'bg-[var(--gt-accent)]/12 text-zinc-100' : 'text-zinc-300'
-        }`}
+        } ${entry.ignored ? 'opacity-45' : ''}`}
       >
         <span className="flex w-3 shrink-0 items-center justify-center text-zinc-600">
           {entry.dir ? (
@@ -85,6 +88,7 @@ function TreeNode({
             )
           ) : null}
         </span>
+        <Icon size={14} strokeWidth={2} className={`shrink-0 ${cls}`} />
         <span className="min-w-0 flex-1 truncate">{entry.name}</span>
         <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
           <button
@@ -138,6 +142,8 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
   const [sidebar, setSidebar] = useState<'files' | 'search'>('files')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchHit[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const searchSeq = useRef(0)
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [pv, setPv] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -195,9 +201,16 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
     return () => window.removeEventListener('keydown', h)
   })
 
+  // Latest-query-wins: a slow earlier search can resolve after a newer one, so
+  // tag each run and drop stale responses (that was the "flaky" results).
   const runSearch = async () => {
-    setResults(null)
-    setResults(await window.gt.files.search(query))
+    const q = query.trim()
+    const seq = ++searchSeq.current
+    setSearching(true)
+    const r = q.length < 2 ? [] : await window.gt.files.search(q)
+    if (seq !== searchSeq.current) return // superseded
+    setResults(r)
+    setSearching(false)
   }
 
   const startPrompt = (p: Prompt) => {
@@ -249,7 +262,9 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
             Open files from the tree → ⌘S save · ⌘W close · ⌘F find · ⌘⇧F search
           </div>
         ) : (
-          open.map((f) => (
+          open.map((f) => {
+            const { Icon, cls } = fileIcon(base(f.path), false)
+            return (
             <div
               key={f.path}
               onClick={() => setActivePath(f.path)}
@@ -258,6 +273,7 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
                 activePath === f.path ? 'bg-[var(--gt-bg)] text-zinc-100' : 'bg-black/20 text-zinc-500 hover:text-zinc-300'
               }`}
             >
+              <Icon size={13} strokeWidth={2} className={`shrink-0 ${cls}`} />
               {f.dirty && <span className="h-1.5 w-1.5 rounded-full bg-[var(--gt-yellow)]" />}
               <span className="max-w-[160px] truncate font-mono">{base(f.path)}</span>
               <button
@@ -270,7 +286,8 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
                 <X size={11} strokeWidth={2.5} />
               </button>
             </div>
-          ))
+            )
+          })
         )}
         <div className="flex-1" />
         {activeFile && !activeFile.err && (
@@ -417,25 +434,33 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
                 />
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
-                {results === null ? (
+                {searching ? (
                   <div className="p-3 text-[12px] text-zinc-600">Searching…</div>
+                ) : results === null ? (
+                  <div className="p-3 text-[12px] text-zinc-600">Type a query and press Enter.</div>
                 ) : results.length === 0 ? (
-                  <div className="p-3 text-[12px] text-zinc-600">
-                    {query ? 'No matches.' : 'Type a query and press Enter.'}
-                  </div>
+                  <div className="p-3 text-[12px] text-zinc-600">No matches for “{query.trim()}”.</div>
                 ) : (
-                  results.map((r, i) => (
-                    <button
-                      key={i}
-                      onClick={() => openFile(r.file, r.line)}
-                      className="block w-full border-b border-[var(--gt-border)]/50 px-3 py-1.5 text-left hover:bg-white/5"
-                    >
-                      <div className="truncate font-mono text-[11px] text-zinc-400">
-                        {r.file}:{r.line}
-                      </div>
-                      <div className="truncate font-mono text-[11px] text-zinc-500">{r.text.trim()}</div>
-                    </button>
-                  ))
+                  results.map((r, i) => {
+                    const { Icon, cls } = fileIcon(base(r.file), false)
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => openFile(r.file, r.line)}
+                        className="block w-full border-b border-[var(--gt-border)]/50 px-3 py-1.5 text-left hover:bg-white/5"
+                      >
+                        <div className="flex items-center gap-1.5 truncate font-mono text-[11px] text-zinc-400">
+                          <Icon size={12} strokeWidth={2} className={`shrink-0 ${cls}`} />
+                          <span className="truncate">
+                            {r.file}:{r.line}
+                          </span>
+                        </div>
+                        <div className="truncate pl-[18px] font-mono text-[11px] text-zinc-500">
+                          {r.text.trim()}
+                        </div>
+                      </button>
+                    )
+                  })
                 )}
               </div>
             </div>

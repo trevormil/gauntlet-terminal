@@ -239,7 +239,7 @@ export type GtApi = {
   }
 }
 
-export type FileEntry = { name: string; path: string; dir: boolean }
+export type FileEntry = { name: string; path: string; dir: boolean; ignored?: boolean }
 export type SearchHit = { file: string; line: number; text: string }
 export type GitStatus = { ok: boolean; branch: string; ahead: number; behind: number; dirty: number }
 export type MrSummary = { open: number; approve: number; changes: number; needsReview: number }

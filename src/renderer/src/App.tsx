@@ -51,14 +51,18 @@ export default function App() {
       {/* session tab bar (top-level, also the window drag region) */}
       <header
         style={drag}
-        className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--gt-border)] bg-[var(--gt-bg)] pl-[78px] pr-2"
+        className="flex h-9 shrink-0 items-center border-b border-[var(--gt-border)] bg-[var(--gt-bg)] pl-[78px] pr-2"
       >
-        <img
-          src={logo}
-          alt="Gauntlet Terminal"
-          draggable={false}
-          className="mr-1.5 h-5 w-5 rounded-md"
-        />
+        {/* brand mark — overflow-clip + scale crops the logo PNG's baked-in
+            padding so the glyph fills the box instead of floating */}
+        <div className="mr-2.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center overflow-hidden rounded-[5px]">
+          <img
+            src={logo}
+            alt="Gauntlet Terminal"
+            draggable={false}
+            className="h-full w-full scale-[1.28] object-cover"
+          />
+        </div>
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {sessions.map((s) => {
             const on = s.key === activeKey
