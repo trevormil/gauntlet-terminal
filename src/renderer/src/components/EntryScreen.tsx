@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, FolderOpen, Plus, GitBranch } from 'lucide-react'
+import { X, FolderOpen, Plus, GitBranch, FolderGit2 } from 'lucide-react'
 import type { SessionMeta } from '../lib/types'
 import logo from '../assets/logo.png'
 
@@ -28,6 +28,25 @@ export function EntryScreen({
   const [cwd, setCwd] = useState('') // new-session target
   const [filterDir, setFilterDir] = useState('') // resume filter ('' = all)
   const [name, setName] = useState('')
+  // "new project from template" scaffold form
+  const [projName, setProjName] = useState('')
+  const [projParent, setProjParent] = useState('')
+  const [scaffoldBusy, setScaffoldBusy] = useState(false)
+  const [scaffoldErr, setScaffoldErr] = useState('')
+
+  const pickParent = async () => {
+    const d = await window.gt.pickDir()
+    if (d) setProjParent(d)
+  }
+  const createProject = async () => {
+    if (!projName.trim() || scaffoldBusy) return
+    setScaffoldBusy(true)
+    setScaffoldErr('')
+    const r = await window.gt.scaffoldProject(projName.trim(), projParent || undefined)
+    setScaffoldBusy(false)
+    if (r.ok && r.path) onChoose({ mode: 'new', cwd: r.path })
+    else setScaffoldErr(r.error || 'scaffold failed')
+  }
 
   useEffect(() => {
     window.gt.listSessions().then((s) => {
@@ -105,6 +124,51 @@ export function EntryScreen({
             </div>
           </div>
         )}
+
+        {/* new project from template */}
+        <div className="mb-4 rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-4">
+          <div className="mb-3 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-400">
+            <FolderGit2 size={13} strokeWidth={2} />
+            New project from template
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              value={projName}
+              onChange={(e) => {
+                setProjName(e.target.value)
+                setScaffoldErr('')
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && createProject()}
+              placeholder="project-name"
+              spellCheck={false}
+              className={`${sel} min-w-0 flex-1 font-mono`}
+            />
+            <button
+              onClick={pickParent}
+              title="Choose parent directory"
+              className={`${sel} inline-flex shrink-0 items-center gap-1.5 hover:border-[var(--gt-accent)]/60`}
+            >
+              <FolderOpen size={13} strokeWidth={2} />
+              {projParent ? tilde(projParent) : '~/CompSci/gauntlet'}
+            </button>
+            <button
+              onClick={createProject}
+              disabled={!projName.trim() || scaffoldBusy}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--gt-accent)] px-4 py-2 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
+            >
+              <Plus size={14} strokeWidth={2.5} />
+              {scaffoldBusy ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+          <div className="mt-2 text-[11px] leading-relaxed text-zinc-600">
+            Copies <span className="font-mono text-zinc-500">project-template</span> →{' '}
+            <span className="font-mono text-zinc-500">
+              {(projParent ? tilde(projParent) : '~/CompSci/gauntlet')}/{projName.trim() || 'name'}
+            </span>
+            , runs <span className="font-mono text-zinc-500">git init</span>, and opens a session there.
+          </div>
+          {scaffoldErr && <div className="mt-1 text-[11px] text-[var(--gt-red)]">{scaffoldErr}</div>}
+        </div>
 
         {/* start new */}
         <div className="mb-6 rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-4">

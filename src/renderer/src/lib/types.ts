@@ -193,6 +193,10 @@ export type GtApi = {
   stopSession: (key: string) => Promise<void>
   pickDir: () => Promise<string | null>
   gauntletDirs: () => Promise<{ name: string; path: string }[]>
+  scaffoldProject: (
+    name: string,
+    parentDir?: string,
+  ) => Promise<{ ok: boolean; path?: string; error?: string }>
   pty: {
     input: (key: string, data: string) => void
     resize: (key: string, size: { cols: number; rows: number }) => void

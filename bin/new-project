@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# new-project — scaffold a new repo from the project-template submodule.
+#
+#   bin/new-project <name> [parent-dir]   # parent defaults to ~/CompSci/gauntlet
+#
+# Copies the template (refreshed to the latest upstream), runs git init + an
+# initial commit. Mirrors the in-app "New project from template" flow on the
+# session-select screen. Create the remote yourself when ready:
+#   cd <dest> && gh repo create <name> --source=. --private --push
+set -euo pipefail
+
+NAME="${1:?usage: bin/new-project <name> [parent-dir]}"
+PARENT="${2:-$HOME/CompSci/gauntlet}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TEMPLATE="$ROOT/templates/project-template"
+SAFE="$(printf '%s' "$NAME" | tr -cs '[:alnum:]._-' '-' | sed 's/^-*//;s/-*$//')"
+DEST="$PARENT/$SAFE"
+
+[ -n "$SAFE" ] || { echo "error: empty project name" >&2; exit 1; }
+[ ! -e "$DEST" ] || { echo "error: $DEST already exists" >&2; exit 1; }
+
+# ensure the template submodule is present, then sync to latest upstream
+[ -e "$TEMPLATE/bootstrap.sh" ] || git -C "$ROOT" submodule update --init templates/project-template
+git -C "$TEMPLATE" pull --ff-only 2>/dev/null || true
+
+echo "Scaffolding '$SAFE' from project-template → $DEST"
+mkdir -p "$DEST"
+( cd "$TEMPLATE" && tar --exclude=.git --exclude=.gitmodules --exclude=node_modules -cf - . ) \
+  | ( cd "$DEST" && tar -xf - )
+
+cd "$DEST"
+git init -q
+git add -A
+git commit -qm "chore: scaffold from project-template"
+
+echo "✓ scaffolded. next:"
+echo "    cd $DEST"
+echo "    # fill the CLAUDE.md placeholders, then create the remote:"
+echo "    gh repo create $SAFE --source=. --private --push"

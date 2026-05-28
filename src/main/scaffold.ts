@@ -1,0 +1,71 @@
+import { execFileSync } from 'node:child_process'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { tmpdir, homedir } from 'node:os'
+import { app } from 'electron'
+
+// Spin up a new repo from project-template (github.com/trevormil/project-template).
+// In dev the template ships as a git submodule (templates/project-template); the
+// packaged app doesn't bundle it, so fall back to a shallow clone (always latest).
+const TEMPLATE_REPO = 'https://github.com/trevormil/project-template'
+const SKIP = new Set(['.git', '.gitmodules', 'node_modules', '.DS_Store'])
+
+export type ScaffoldResult = { ok: boolean; path?: string; error?: string }
+
+function templateSource(): { dir: string; cleanup?: () => void } {
+  const local = join(app.getAppPath(), 'templates', 'project-template')
+  if (existsSync(join(local, 'bootstrap.sh'))) {
+    // refresh to the latest upstream so scaffolds track the maintained template
+    try {
+      execFileSync('git', ['-C', local, 'pull', '--ff-only'], { stdio: 'ignore', timeout: 15_000 })
+    } catch {
+      /* offline / detached — use the pinned submodule as-is */
+    }
+    return { dir: local }
+  }
+  const tmp = mkdtempSync(join(tmpdir(), 'gt-template-'))
+  execFileSync('git', ['clone', '--depth', '1', TEMPLATE_REPO, tmp], {
+    stdio: 'ignore',
+    timeout: 60_000,
+  })
+  return { dir: tmp, cleanup: () => rmSync(tmp, { recursive: true, force: true }) }
+}
+
+/** Create <parentDir>/<name> from the template: copy → git init → first commit. */
+export function scaffoldProject(name: string, parentDir?: string): ScaffoldResult {
+  const safe = name.trim().replace(/[^\w.-]/g, '-').replace(/^-+|-+$/g, '')
+  if (!safe) return { ok: false, error: 'enter a project name' }
+  const parent = parentDir?.trim() || join(homedir(), 'CompSci', 'gauntlet')
+  const dest = join(parent, safe)
+  if (existsSync(dest)) return { ok: false, error: `${dest} already exists` }
+
+  let src: { dir: string; cleanup?: () => void }
+  try {
+    src = templateSource()
+  } catch (e) {
+    return { ok: false, error: `couldn't fetch template — ${(e as Error).message}` }
+  }
+  try {
+    mkdirSync(dest, { recursive: true })
+    cpSync(src.dir, dest, { recursive: true, filter: (s) => !SKIP.has(basename(s)) })
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', dest, ...args], {
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || 'Gauntlet Terminal',
+          GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || 'noreply@gauntlet.local',
+          GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || 'Gauntlet Terminal',
+          GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || 'noreply@gauntlet.local',
+        },
+      })
+    git('init', '-q')
+    git('add', '-A')
+    git('commit', '-qm', 'chore: scaffold from project-template')
+    return { ok: true, path: dest }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  } finally {
+    src.cleanup?.()
+  }
+}

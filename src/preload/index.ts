@@ -18,6 +18,8 @@ const gt = {
   stopSession: (key: string) => ipcRenderer.invoke('session:stop', key),
   pickDir: () => ipcRenderer.invoke('dialog:pickDir'),
   gauntletDirs: () => ipcRenderer.invoke('dirs:gauntlet'),
+  scaffoldProject: (name: string, parentDir?: string) =>
+    ipcRenderer.invoke('project:scaffold', name, parentDir),
 
   // terminal io, routed by session key (the pty is spawned by startSession)
   pty: {

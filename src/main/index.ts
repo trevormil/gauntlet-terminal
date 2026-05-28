@@ -19,6 +19,7 @@ import { listMrs, getMr, getMrDiff, mrSummary } from './mrs'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
+import { scaffoldProject } from './scaffold'
 
 const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
@@ -198,6 +199,9 @@ ipcMain.handle('dialog:pickDir', async () => {
   })
   return r.canceled ? null : r.filePaths[0]
 })
+ipcMain.handle('project:scaffold', (_e, name: string, parentDir?: string) =>
+  scaffoldProject(name, parentDir),
+)
 
 // ---- PTY IPC (routed by session key) ----
 ipcMain.on('pty:input', (_e, key: string, data: string) => sessions.get(key)?.pty.write(data))
