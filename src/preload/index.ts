@@ -58,6 +58,8 @@ const gt = {
     update: (slug: string, patch: { status?: string; priority?: string }) =>
       ipcRenderer.invoke('tickets:update', slug, patch),
   },
+  projectSessions: () => ipcRenderer.invoke('sessions:project-list'),
+  getProjectSession: (slug: string) => ipcRenderer.invoke('sessions:project-get', slug),
   listMrs: () => ipcRenderer.invoke('mrs:list'),
   getMr: (iid: number) => ipcRenderer.invoke('mrs:get', iid),
   getMrDiff: (iid: number) => ipcRenderer.invoke('mrs:diff', iid),

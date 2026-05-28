@@ -1,9 +1,8 @@
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseFrontmatter } from './frontmatter'
 
 // Per-repo backlog: <repoRoot>/backlog/NNNN-slug.md with YAML frontmatter.
-// Minimal parser/writer for the known flat schema (scalars + string arrays) —
-// no YAML dep needed.
 
 export type Ticket = {
   slug: string
@@ -11,6 +10,8 @@ export type Ticket = {
   title: string
   status: string
   priority: string
+  horizon: string
+  hitl: boolean
   type: string
   source: string
   created: string
@@ -32,30 +33,8 @@ function backlogDir(repoRoot: string): string {
   return join(repoRoot, 'backlog')
 }
 
-function parse(md: string): { fm: Record<string, unknown>; body: string } {
-  const m = md.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-  if (!m) return { fm: {}, body: md }
-  const fm: Record<string, unknown> = {}
-  for (const line of m[1].split('\n')) {
-    const mm = line.match(/^([\w-]+):\s*(.*)$/)
-    if (!mm) continue
-    const [, key, rawVal] = mm
-    const val = rawVal.trim()
-    if (val.startsWith('[') && val.endsWith(']')) {
-      fm[key] = val
-        .slice(1, -1)
-        .split(',')
-        .map((s) => s.trim().replace(/^["']|["']$/g, ''))
-        .filter(Boolean)
-    } else {
-      fm[key] = val.replace(/^["']|["']$/g, '')
-    }
-  }
-  return { fm, body: m[2] }
-}
-
 function toTicket(slug: string, md: string): Ticket {
-  const { fm, body } = parse(md)
+  const { fm, body } = parseFrontmatter(md)
   const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   return {
@@ -64,6 +43,8 @@ function toTicket(slug: string, md: string): Ticket {
     title: str(fm.title) || slug,
     status: str(fm.status) || 'open',
     priority: str(fm.priority) || 'medium',
+    horizon: str(fm.horizon) || 'now',
+    hitl: fm.hitl === 'true' || fm.hitl === true,
     type: str(fm.type) || 'feature',
     source: str(fm.source),
     created: str(fm.created),

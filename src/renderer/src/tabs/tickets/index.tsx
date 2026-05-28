@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react'
 import { Badge, badgeClasses } from '../../components/ui'
 import { Markdown } from '../../components/Markdown'
 import { MrDetailView } from '../../components/MrDetail'
-import { statusTone, priorityTone, typeTone, verdictTone, testTone, stateTone } from '../../lib/badges'
+import {
+  statusTone,
+  priorityTone,
+  typeTone,
+  horizonTone,
+  verdictTone,
+  testTone,
+  stateTone,
+} from '../../lib/badges'
 import type { BadgeTone } from '../../components/ui'
 import type { Tab, Ticket, Mr, TabContext } from '../../lib/types'
 
@@ -35,6 +43,7 @@ function FieldSelect({
 const STATUSES = ['open', 'in-progress', 'closed', 'stuck', 'icebox']
 const TYPES = ['feature', 'bug', 'security', 'docs', 'dx', 'testing', 'ux', 'performance']
 const PRIORITIES = ['critical', 'high', 'medium', 'low']
+const HORIZONS = ['now', 'next', 'future']
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -175,6 +184,8 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
   const [creating, setCreating] = useState(false)
   const [fStatus, setFStatus] = useState('all')
   const [fType, setFType] = useState('all')
+  const [fHorizon, setFHorizon] = useState('all')
+  const [fHitl, setFHitl] = useState(false)
   const [q, setQ] = useState('')
 
   const loadTickets = () => window.gt.tickets.list().then(setTickets)
@@ -193,6 +204,8 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
     (t) =>
       (fStatus === 'all' || t.status === fStatus) &&
       (fType === 'all' || t.type === fType) &&
+      (fHorizon === 'all' || t.horizon === fHorizon) &&
+      (!fHitl || t.hitl) &&
       (!q || t.title.toLowerCase().includes(q.toLowerCase()) || String(t.id).includes(q)),
   )
   const selected = tickets?.find((t) => t.slug === sel) || null
@@ -258,6 +271,15 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
               {t}
             </Chip>
           ))}
+          <span className="mx-1 text-zinc-700">·</span>
+          {HORIZONS.map((h) => (
+            <Chip key={h} active={fHorizon === h} onClick={() => setFHorizon(fHorizon === h ? 'all' : h)}>
+              {h}
+            </Chip>
+          ))}
+          <Chip active={fHitl} onClick={() => setFHitl((v) => !v)}>
+            🙋 HITL
+          </Chip>
         </div>
       )}
 
@@ -296,6 +318,8 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
                   >
                     <span className="font-mono text-[11px] text-zinc-600">#{t.id}</span>
                     <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{t.title}</span>
+                    {t.hitl && <Badge tone="red">🙋</Badge>}
+                    {t.horizon !== 'now' && <Badge tone={horizonTone(t.horizon)}>{t.horizon}</Badge>}
                     {t.priority !== 'medium' && (
                       <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>
                     )}
@@ -336,6 +360,8 @@ function TicketsTab({ ctx }: { ctx: TabContext }) {
                         loadTickets()
                       }}
                     />
+                    <Badge tone={horizonTone(selected.horizon)}>{selected.horizon}</Badge>
+                    {selected.hitl && <Badge tone="red">🙋 HITL</Badge>}
                   </div>
                   <h1 className="mb-2 text-lg font-bold text-zinc-100">{selected.title}</h1>
                   <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-600">

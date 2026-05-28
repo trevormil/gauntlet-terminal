@@ -58,6 +58,8 @@ export type Ticket = {
   title: string
   status: string
   priority: string
+  horizon: string
+  hitl: boolean
   type: string
   source: string
   created: string
@@ -65,6 +67,21 @@ export type Ticket = {
   prs: string[]
   refs: string[]
   body: string
+}
+
+export type ProjectSession = {
+  slug: string
+  id: number
+  title: string
+  status: string
+  goal: string
+  started: string
+  ended: string
+  anchor: string
+  tickets: string[]
+  branches: string[]
+  prs: string[]
+  body?: string
 }
 
 export type NewTicket = { title: string; type: string; priority: string; status: string; body: string }
@@ -126,6 +143,7 @@ export type TabContext = {
   repoPath: string
   repoHost: string
   hasBacklog: boolean
+  hasSessions: boolean
 }
 
 export type SessionMeta = {
@@ -197,6 +215,8 @@ export type GtApi = {
     create: (input: NewTicket) => Promise<Ticket>
     update: (slug: string, patch: { status?: string; priority?: string }) => Promise<boolean>
   }
+  projectSessions: () => Promise<ProjectSession[]>
+  getProjectSession: (slug: string) => Promise<ProjectSession | null>
   listMrs: () => Promise<Mr[]>
   getMr: (iid: number) => Promise<MrDetail | null>
   getMrDiff: (iid: number) => Promise<string>

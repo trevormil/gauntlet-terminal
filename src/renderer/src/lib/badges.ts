@@ -36,3 +36,9 @@ export const sevTone = (s: string): BadgeTone => {
 
 export const stateTone = (s: string): BadgeTone =>
   s === 'merged' ? 'green' : s === 'closed' ? 'red' : 'yellow'
+
+export const sessionStatusTone = (s: string): BadgeTone =>
+  s === 'active' ? 'green' : s === 'abandoned' ? 'red' : 'mute'
+
+export const horizonTone = (h: string): BadgeTone =>
+  h === 'now' ? 'accent' : h === 'next' ? 'blue' : 'mute'

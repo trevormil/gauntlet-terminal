@@ -18,6 +18,7 @@ import { listTickets, getTicket, createTicket, updateTicket, type NewTicket } fr
 import { listMrs, getMr, getMrDiff, mrSummary } from './mrs'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
+import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
 
 const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
@@ -228,8 +229,13 @@ ipcMain.handle('tab:context', () => {
     repoPath: repo?.path || '',
     repoHost: repo?.host || '',
     hasBacklog: !!repoRoot && existsSync(join(repoRoot, 'backlog')),
+    hasSessions: repoHasSessions(repoRoot),
   }
 })
+ipcMain.handle('sessions:project-list', () => listProjectSessions(repoRootOf(cur().cwd)))
+ipcMain.handle('sessions:project-get', (_e, slug: string) =>
+  getProjectSession(repoRootOf(cur().cwd), slug),
+)
 ipcMain.handle('tickets:list', () => listTickets(repoRootOf(cur().cwd)))
 ipcMain.handle('tickets:get', (_e, slug: string) => getTicket(repoRootOf(cur().cwd), slug))
 ipcMain.handle('tickets:create', (_e, input: NewTicket) =>
