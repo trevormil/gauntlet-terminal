@@ -1,5 +1,14 @@
-import { readdirSync, statSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  renameSync,
+} from 'node:fs'
+import { join, resolve, sep, dirname } from 'node:path'
 import { execFile } from 'node:child_process'
 
 // Scoped file access for the Files tab. Every path is validated to stay within
@@ -71,6 +80,45 @@ export function writeFile(root: string, rel: string, content: string): boolean {
   if (!abs) return false
   try {
     writeFileSync(abs, content)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function createEntry(root: string, rel: string, dir: boolean): boolean {
+  const abs = safe(root, rel)
+  if (!abs || existsSync(abs)) return false
+  try {
+    if (dir) mkdirSync(abs, { recursive: true })
+    else {
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, '')
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function renameEntry(root: string, from: string, to: string): boolean {
+  const a = safe(root, from)
+  const b = safe(root, to)
+  if (!a || !b || !existsSync(a) || existsSync(b)) return false
+  try {
+    mkdirSync(dirname(b), { recursive: true })
+    renameSync(a, b)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function removeEntry(root: string, rel: string): boolean {
+  const abs = safe(root, rel)
+  if (!abs || abs === resolve(root) || !existsSync(abs)) return false
+  try {
+    rmSync(abs, { recursive: true, force: true })
     return true
   } catch {
     return false

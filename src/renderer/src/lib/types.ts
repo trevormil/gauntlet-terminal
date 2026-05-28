@@ -198,6 +198,9 @@ export type GtApi = {
     read: (rel: string) => Promise<{ ok: boolean; content: string; reason?: string }>
     write: (rel: string, content: string) => Promise<boolean>
     search: (q: string) => Promise<{ file: string; line: number; text: string }[]>
+    create: (rel: string, dir: boolean) => Promise<boolean>
+    rename: (from: string, to: string) => Promise<boolean>
+    del: (rel: string) => Promise<boolean>
   }
 }
 

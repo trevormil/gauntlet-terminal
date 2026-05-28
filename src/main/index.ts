@@ -11,7 +11,7 @@ import { repoRootOf, repoForCwd } from './repo'
 import { listTickets, getTicket, createTicket, type NewTicket } from './backlog'
 import { listMrs, getMr, getMrDiff } from './mrs'
 import { readNotes, writeNotes, type NotesScope } from './notes'
-import { listDir, readFile, writeFile, searchRepo } from './files'
+import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 
 const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
@@ -207,6 +207,9 @@ ipcMain.handle('files:write', (_e, rel: string, content: string) =>
   writeFile(filesRoot(), rel, content),
 )
 ipcMain.handle('files:search', (_e, q: string) => searchRepo(filesRoot(), q))
+ipcMain.handle('files:create', (_e, rel: string, dir: boolean) => createEntry(filesRoot(), rel, dir))
+ipcMain.handle('files:rename', (_e, from: string, to: string) => renameEntry(filesRoot(), from, to))
+ipcMain.handle('files:delete', (_e, rel: string) => removeEntry(filesRoot(), rel))
 
 app.whenReady().then(() => {
   createWindow()
