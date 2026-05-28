@@ -165,6 +165,7 @@ export type GtApi = {
   listSessions: () => Promise<SessionMeta[]>
   startSession: (opts: StartOpts) => Promise<{ sessionId: string; cwd: string }>
   pickDir: () => Promise<string | null>
+  gauntletDirs: () => Promise<{ name: string; path: string }[]>
   pty: {
     input: (data: string) => void
     resize: (size: { cols: number; rows: number }) => void

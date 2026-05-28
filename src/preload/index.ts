@@ -15,6 +15,7 @@ const gt = {
   listSessions: () => ipcRenderer.invoke('sessions:list'),
   startSession: (opts: StartOpts) => ipcRenderer.invoke('session:start', opts),
   pickDir: () => ipcRenderer.invoke('dialog:pickDir'),
+  gauntletDirs: () => ipcRenderer.invoke('dirs:gauntlet'),
 
   // terminal io (the pty is spawned by startSession)
   pty: {

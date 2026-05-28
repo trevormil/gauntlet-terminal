@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { statSync, existsSync } from 'node:fs'
+import { statSync, existsSync, readdirSync } from 'node:fs'
 import * as pty from 'node-pty'
 import { readTranscriptStats, readHarnessTdd, listSessions, findSessionFile } from './data'
 import { readUsage } from './usage'
@@ -122,6 +122,24 @@ function createWindow() {
 // ---- session IPC ----
 ipcMain.handle('sessions:list', () => listSessions())
 ipcMain.handle('session:start', (_e, opts: StartOpts) => startSession(opts))
+ipcMain.handle('dirs:gauntlet', () => {
+  const base = join(homedir(), 'CompSci', 'gauntlet')
+  try {
+    return readdirSync(base)
+      .filter((n) => !n.startsWith('.'))
+      .map((n) => ({ name: n, path: join(base, n) }))
+      .filter((d) => {
+        try {
+          return statSync(d.path).isDirectory()
+        } catch {
+          return false
+        }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    return []
+  }
+})
 ipcMain.handle('dialog:pickDir', async () => {
   const r = await dialog.showOpenDialog(win!, {
     properties: ['openDirectory', 'createDirectory'],

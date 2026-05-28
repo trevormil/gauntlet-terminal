@@ -11,10 +11,14 @@ function rel(ms: number): string {
   return `${Math.floor(s / 86400)}d ago`
 }
 const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, '~')
+const underDir = (sessionCwd: string, dir: string) =>
+  sessionCwd === dir || sessionCwd.startsWith(dir.replace(/\/$/, '') + '/')
 
 export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null)
-  const [cwd, setCwd] = useState('')
+  const [dirs, setDirs] = useState<{ name: string; path: string }[]>([])
+  const [cwd, setCwd] = useState('') // new-session target
+  const [filterDir, setFilterDir] = useState('') // resume filter ('' = all)
   const [name, setName] = useState('')
 
   useEffect(() => {
@@ -22,12 +26,25 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
       setSessions(s)
       if (s[0]?.cwd) setCwd(s[0].cwd)
     })
+    window.gt.gauntletDirs().then(setDirs)
   }, [])
 
+  // selecting a folder targets the new session there AND filters resume to it
+  const selectDir = (path: string) => {
+    setCwd(path)
+    setFilterDir(path)
+  }
   const browse = async () => {
     const dir = await window.gt.pickDir()
-    if (dir) setCwd(dir)
+    if (dir) selectDir(dir)
   }
+
+  const all = sessions || []
+  const shown = filterDir ? all.filter((s) => underDir(s.cwd, filterDir)) : all
+  const countFor = (path: string) => all.filter((s) => underDir(s.cwd, path)).length
+
+  const sel =
+    'rounded-lg border border-[var(--gt-border)] bg-black/30 px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[var(--gt-accent)]/60'
 
   return (
     <div className="h-full w-full overflow-y-auto bg-[var(--gt-bg)]">
@@ -36,10 +53,40 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
           <span className="text-2xl text-[var(--gt-accent)]">◆</span>
           <h1 className="text-2xl font-bold tracking-tight">Gauntlet Terminal</h1>
         </div>
-        <p className="mb-8 text-sm text-zinc-500">
-          Attach to a Claude session. This window pins to it — context, cost, and telemetry all
+        <p className="mb-6 text-sm text-zinc-500">
+          Attach to a Claude session. This window pins to it — context, usage, and telemetry all
           track that one session.
         </p>
+
+        {/* quick-pick directories */}
+        {dirs.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+              Projects
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {dirs.map((d) => {
+                const n = countFor(d.path)
+                const active = filterDir === d.path
+                return (
+                  <button
+                    key={d.path}
+                    onClick={() => selectDir(d.path)}
+                    title={d.path}
+                    className={`rounded-lg border px-2.5 py-1 text-[12px] transition-colors ${
+                      active
+                        ? 'border-[var(--gt-accent)] bg-[var(--gt-accent)]/15 text-zinc-100'
+                        : 'border-[var(--gt-border)] text-zinc-300 hover:border-[var(--gt-accent)]/60'
+                    }`}
+                  >
+                    {d.name}
+                    {n > 0 && <span className="ml-1 text-[10px] text-zinc-500">{n}</span>}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* start new */}
         <div className="mb-6 rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-4">
@@ -47,10 +94,7 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
             Start a new session
           </div>
           <div className="mb-2 flex items-center gap-2">
-            <button
-              onClick={browse}
-              className="shrink-0 rounded-lg border border-[var(--gt-border)] bg-black/30 px-3 py-2 text-[12px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
-            >
+            <button onClick={browse} className={`${sel} shrink-0 hover:border-[var(--gt-accent)]/60`}>
               📁 Folder
             </button>
             <input
@@ -58,7 +102,7 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
               onChange={(e) => setCwd(e.target.value)}
               placeholder="~ (home)"
               spellCheck={false}
-              className="min-w-0 flex-1 rounded-lg border border-[var(--gt-border)] bg-black/30 px-3 py-2 font-mono text-[12px] text-zinc-200 outline-none focus:border-[var(--gt-accent)]/60"
+              className={`${sel} min-w-0 flex-1 font-mono`}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -66,36 +110,42 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="session name (optional)"
-              className="min-w-0 flex-1 rounded-lg border border-[var(--gt-border)] bg-black/30 px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[var(--gt-accent)]/60"
+              className={`${sel} min-w-0 flex-1`}
             />
             <button
               onClick={() =>
-                onChoose({
-                  mode: 'new',
-                  cwd: cwd.trim() || undefined,
-                  name: name.trim() || undefined,
-                })
+                onChoose({ mode: 'new', cwd: cwd.trim() || undefined, name: name.trim() || undefined })
               }
               className="shrink-0 rounded-lg bg-[var(--gt-accent)] px-4 py-2 text-[12px] font-semibold text-white hover:opacity-90"
             >
-              + New session
+              ＋ New session
             </button>
           </div>
         </div>
 
         {/* resume */}
-        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-400">
-          Resume {sessions ? `(${sessions.length})` : ''}
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-400">
+            Resume{filterDir ? ` · ${filterDir.split('/').pop()}` : ''} ({shown.length})
+          </span>
+          {filterDir && (
+            <button
+              onClick={() => setFilterDir('')}
+              className="text-[11px] text-[var(--gt-accent-2)] hover:underline"
+            >
+              show all
+            </button>
+          )}
         </div>
         {sessions === null ? (
           <div className="py-6 text-center text-[12px] text-zinc-600">Scanning sessions…</div>
-        ) : sessions.length === 0 ? (
+        ) : shown.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--gt-border)] p-6 text-center text-[12px] text-zinc-600">
-            No prior Claude sessions found.
+            {filterDir ? 'No sessions for this folder — start a new one above.' : 'No prior Claude sessions found.'}
           </div>
         ) : (
           <div className="space-y-2">
-            {sessions.slice(0, 300).map((s) => (
+            {shown.slice(0, 300).map((s) => (
               <button
                 key={s.id}
                 onClick={() => onChoose({ mode: 'resume', sessionId: s.id, cwd: s.cwd })}
@@ -103,9 +153,7 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] text-zinc-100">
-                    {s.firstUserText || (
-                      <span className="italic text-zinc-500">untitled session</span>
-                    )}
+                    {s.firstUserText || <span className="italic text-zinc-500">untitled session</span>}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 truncate text-[11px] text-zinc-500">
                     <span className="font-mono">{tilde(s.cwd) || '~'}</span>
