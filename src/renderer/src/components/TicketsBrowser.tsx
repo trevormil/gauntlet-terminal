@@ -30,7 +30,10 @@ function FieldSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`cursor-pointer appearance-none rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide outline-none ${badgeClasses(tone)}`}
+      // field-sizing:content makes the <select> hug the selected value instead of
+      // sizing to its widest option ("in-progress"/"critical") — kills the
+      // trailing min-width padding on short values like "open".
+      className={`cursor-pointer appearance-none rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide outline-none [field-sizing:content] ${badgeClasses(tone)}`}
     >
       {options.map((o) => (
         <option key={o} value={o} className="bg-[var(--gt-panel)] normal-case text-zinc-200">
