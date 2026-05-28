@@ -45,19 +45,8 @@ export function TerminalPane({
 
     const gt = window.gt
 
-    // copy/paste: Cmd+C copies the selection, Cmd+V pastes into the pty.
-    term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown' || !e.metaKey) return true
-      if (e.key === 'c' && term.hasSelection()) {
-        gt.clipboardWrite(term.getSelection())
-        return false
-      }
-      if (e.key === 'v') {
-        gt.clipboardRead().then((t) => t && gt.pty.input(sessionKey, t))
-        return false
-      }
-      return true
-    })
+    // Cmd+C / Cmd+V are handled natively by Electron's default Edit menu — don't
+    // add a custom key handler too, or copy/paste fires twice (duplicates).
     // right-click: copy the selection if any, else paste (classic terminal UX).
     const onContext = (e: MouseEvent) => {
       e.preventDefault()
