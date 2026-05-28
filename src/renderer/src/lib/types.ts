@@ -252,6 +252,8 @@ export type Tab = {
   order?: number
   /** Whether this tab applies to the attached session's repo. */
   appliesTo: (ctx: TabContext) => boolean
+  /** Optional live count shown as a pill on the tab (e.g. HITL items waiting). */
+  badge?: (gt: GtApi) => Promise<number>
   Component: (props: { ctx: TabContext }) => ReactNode
 }
 

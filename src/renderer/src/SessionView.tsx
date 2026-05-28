@@ -48,6 +48,7 @@ export function SessionView({
   const [enabled, setEnabled] = useState<string[]>(() => load('gt.enabled', []))
   const [known, setKnown] = useState<string[]>(() => load('gt.known', []))
   const [drawer, setDrawer] = useState(false)
+  const [tabBadges, setTabBadges] = useState<Record<string, number>>({})
 
   const allPlugins = useMemo(
     () => [...ALL_PLUGINS, ...cmdPlugins].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)),
@@ -90,27 +91,58 @@ export function SessionView({
     window.gt.tabContext().then(setCtx).catch(() => {})
   }, [info.sessionId, active])
 
+  // Poll tab badges (e.g. HITL count) for any tab that declares one — refresh
+  // on the transcript tick and a slow interval.
+  useEffect(() => {
+    if (!active || !ctx) return
+    const withBadge = tabs.filter((t) => t.badge)
+    if (withBadge.length === 0) return
+    let alive = true
+    const run = async () => {
+      const entries = await Promise.all(
+        withBadge.map(async (t) => [t.id, await t.badge!(window.gt).catch(() => 0)] as const),
+      )
+      if (alive) setTabBadges((b) => ({ ...b, ...Object.fromEntries(entries) }))
+    }
+    run()
+    const off = window.gt.onTick(run)
+    const id = setInterval(run, 8000)
+    return () => {
+      alive = false
+      off()
+      clearInterval(id)
+    }
+  }, [active, ctx, tabs])
+
   const toggle = (id: string) =>
     setEnabled((e) => (e.includes(id) ? e.filter((x) => x !== id) : [...e, id]))
   const activeWidgets = allPlugins.filter((p) => enabled.includes(p.id))
   const ActiveTab = tabs.find((t) => t.id === activeTab)
   const onTerminal = !ActiveTab
 
-  const tabPill = (id: string, Icon: LucideIcon, label: string) => (
-    <button
-      key={id}
-      style={noDrag}
-      onClick={() => setActiveTab(id)}
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-        activeTab === id
-          ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
-          : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'
-      }`}
-    >
-      <Icon size={13} strokeWidth={2} />
-      {label}
-    </button>
-  )
+  const tabPill = (id: string, Icon: LucideIcon, label: string) => {
+    const count = tabBadges[id]
+    return (
+      <button
+        key={id}
+        style={noDrag}
+        onClick={() => setActiveTab(id)}
+        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+          activeTab === id
+            ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
+            : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'
+        }`}
+      >
+        <Icon size={13} strokeWidth={2} />
+        {label}
+        {count ? (
+          <span className="ml-0.5 rounded-full bg-[var(--gt-yellow)]/20 px-1.5 text-[9px] font-bold tabular-nums text-[var(--gt-yellow)]">
+            {count}
+          </span>
+        ) : null}
+      </button>
+    )
+  }
 
   return (
     <div className="flex h-full flex-col">

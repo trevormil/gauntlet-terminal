@@ -70,7 +70,10 @@ function SessionsTab({ ctx }: { ctx: TabContext }) {
           {list === null ? (
             <div className="p-6 text-[12px] text-zinc-600">Loading…</div>
           ) : shown.length === 0 ? (
-            <div className="p-6 text-[12px] text-zinc-600">No sessions.</div>
+            <div className="p-6 text-[12px] leading-relaxed text-zinc-600">
+              No session docs in <span className="font-mono">sessions/</span> yet. Start one with{' '}
+              <span className="font-mono text-zinc-400">/session-start</span> in the terminal.
+            </div>
           ) : (
             shown.map((s) => (
               <button
@@ -162,7 +165,9 @@ const tab: Tab = {
   title: 'Sessions',
   icon: Layers,
   order: 0,
-  appliesTo: (ctx) => ctx.hasSessions,
+  // Always available for a repo (peer to Tickets & MRs); shows the repo's
+  // sessions/ docs, with an empty state until /session-start creates one.
+  appliesTo: (ctx) => ctx.hasSessions || !!ctx.repoRoot,
   Component: SessionsTab,
 }
 export default tab
