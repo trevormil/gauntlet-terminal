@@ -1,11 +1,11 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 // Persisted, self-configuring app settings. Every key has a working default —
 // a fresh install (no file) runs fine, and an empty string means "resolve at
-// read time" (e.g. projectsDir → detect ~/CompSci/gauntlet else ~). Legacy
-// files in the old { telegram, telegramControl } shape are migrated on read.
+// read time" (e.g. projectsDir → your home dir). Legacy files in the old
+// { telegram, telegramControl } shape are migrated on read.
 
 export type EngineId = 'codex' | 'claude'
 export type EngineCfg = { path: string } // '' = use the bare binary name on PATH
@@ -18,7 +18,7 @@ export type TelegramCfg = {
 }
 export type Settings = {
   onboarded: boolean
-  projectsDir: string // '' → resolved (detect ~/CompSci/gauntlet, else ~)
+  projectsDir: string // '' → resolved to your home dir
   worktreesDir: string // '' → <projectsDir>/.worktrees
   engines: Record<EngineId, EngineCfg>
   defaultEngine: EngineId
@@ -125,18 +125,17 @@ export function worktreesFrom(worktreesDir: string, projectsResolved: string): s
 }
 
 export function resolvedProjectsDir(): string {
-  const s = readSettings()
-  if (s.projectsDir) return s.projectsDir
-  const legacy = join(homedir(), 'CompSci', 'gauntlet')
-  return existsSync(legacy) ? legacy : homedir()
+  return readSettings().projectsDir || homedir()
 }
 
 export function resolvedWorktreesDir(): string {
   return worktreesFrom(readSettings().worktreesDir, resolvedProjectsDir())
 }
 
+/** Optional cross-repo review-artifact store. '' (default) = none; the in-repo
+ *  .reviews/ dir is the primary source and needs no configuration. */
 export function resolvedHarnessDir(): string {
-  return readSettings().harnessDir || join(homedir(), 'CompSci', 'gauntlet', 'autopilot-harness')
+  return readSettings().harnessDir
 }
 
 export function resolvedTemplateRepo(): string {

@@ -33,6 +33,8 @@ export function EntryScreen({
   const [projParent, setProjParent] = useState('')
   const [scaffoldBusy, setScaffoldBusy] = useState(false)
   const [scaffoldErr, setScaffoldErr] = useState('')
+  const [defaultParent, setDefaultParent] = useState('') // configured projects dir ('' → ~)
+  const parentLabel = defaultParent ? tilde(defaultParent) : '~'
 
   const pickParent = async () => {
     const d = await window.gt.pickDir()
@@ -54,6 +56,7 @@ export function EntryScreen({
       if (s[0]?.cwd) setCwd(s[0].cwd)
     })
     window.gt.projectDirs().then(setDirs)
+    window.gt.settings.get().then((s) => setDefaultParent(s.projectsDir))
   }, [])
 
   // selecting a folder targets the new session there AND filters resume to it
@@ -149,7 +152,7 @@ export function EntryScreen({
               className={`${sel} inline-flex shrink-0 items-center gap-1.5 hover:border-[var(--gt-accent)]/60`}
             >
               <FolderOpen size={13} strokeWidth={2} />
-              {projParent ? tilde(projParent) : '~/CompSci/gauntlet'}
+              {projParent ? tilde(projParent) : parentLabel}
             </button>
             <button
               onClick={createProject}
@@ -163,7 +166,7 @@ export function EntryScreen({
           <div className="mt-2 text-[11px] leading-relaxed text-zinc-600">
             Copies <span className="font-mono text-zinc-500">project-template</span> →{' '}
             <span className="font-mono text-zinc-500">
-              {(projParent ? tilde(projParent) : '~/CompSci/gauntlet')}/{projName.trim() || 'name'}
+              {(projParent ? tilde(projParent) : parentLabel)}/{projName.trim() || 'name'}
             </span>
             , runs <span className="font-mono text-zinc-500">git init</span>, and opens a session there.
           </div>

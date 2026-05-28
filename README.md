@@ -152,7 +152,7 @@ and opens a session there.
 **From the terminal:**
 
 ```bash
-bin/new-project my-app                  # → ~/CompSci/gauntlet/my-app
+bin/new-project my-app                  # → <your projects dir>/my-app
 bin/new-project my-app /path/to/parent  # custom parent
 ```
 

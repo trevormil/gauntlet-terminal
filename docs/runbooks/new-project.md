@@ -15,7 +15,7 @@ new path.
 
 1. Launch (`bun run dev` or the installed app) → the session picker.
 2. **New project from template** card: type a project name, optionally pick a
-   parent folder (default `~/CompSci/gauntlet`), hit **Create**.
+   parent folder (default: your configured projects dir, else `~`), hit **Create**.
 3. It copies the template into `<parent>/<name>`, runs `git init` + a first
    commit, and opens a Claude session there.
 
@@ -25,7 +25,7 @@ written — pick a new name.
 ## From the terminal
 
 ```bash
-bin/new-project my-app                  # → ~/CompSci/gauntlet/my-app
+bin/new-project my-app                  # → <your projects dir>/my-app
 bin/new-project my-app /path/to/parent  # custom parent
 ```
 

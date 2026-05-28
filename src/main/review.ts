@@ -1,12 +1,11 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { resolvedHarnessDir } from './settings'
 
 // Reads code-review/test artifacts from two locations:
 //   in-repo (project-template):  <repoRoot>/.reviews/<iid>/<short_sha>.md  (+ findings/suggestions.json, no meta.json)
-//   legacy harness:              <HARNESS>/prs/<host>/<owner>/<repo>/<iid>/<short_sha>.md (+ meta.json commit list)
-// In-repo wins when present.
-export const HARNESS = join(homedir(), 'CompSci', 'gauntlet', 'autopilot-harness')
+//   optional harness store:      <harnessDir>/prs/<host>/<owner>/<repo>/<iid>/<short_sha>.md (+ meta.json commit list)
+// In-repo wins when present; the harness store is opt-in (Settings → harnessDir, '' = off).
 
 export type Review = {
   number: number
@@ -40,8 +39,10 @@ const safeReaddir = (d: string): string[] => {
     return []
   }
 }
-const harnessPrDir = (host: string, repoPath: string, iid: number | string) =>
-  join(HARNESS, 'prs', host, ...repoPath.split('/'), String(iid))
+const harnessPrDir = (host: string, repoPath: string, iid: number | string) => {
+  const h = resolvedHarnessDir()
+  return h ? join(h, 'prs', host, ...repoPath.split('/'), String(iid)) : ''
+}
 const inRepoReviewDir = (repoRoot: string, iid: number | string) =>
   join(repoRoot, '.reviews', String(iid))
 
@@ -62,7 +63,7 @@ export function resolveReviewDir(
     if (hasArtifacts(d)) return d
   }
   const h = harnessPrDir(host, repoPath, iid)
-  if (hasArtifacts(h)) return h
+  if (h && hasArtifacts(h)) return h
   return null
 }
 
@@ -173,7 +174,9 @@ export function newestReviewDirForRepo(repoRoot: string, host: string, repoPath:
       if (best) return best.dir
     }
   }
-  const repoDir = join(HARNESS, 'prs', host, ...repoPath.split('/'))
+  const harness = resolvedHarnessDir()
+  if (!harness) return null
+  const repoDir = join(harness, 'prs', host, ...repoPath.split('/'))
   if (!existsSync(repoDir)) return null
   let best: { dir: string; mtime: number } | null = null
   for (const n of safeReaddir(repoDir)) {

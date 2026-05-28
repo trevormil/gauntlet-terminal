@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # new-project — scaffold a new repo from the project-template submodule.
 #
-#   bin/new-project <name> [parent-dir]   # parent defaults to ~/CompSci/gauntlet
+#   bin/new-project <name> [parent-dir]   # parent defaults to your configured
+#                                         # projects dir (else $HOME)
 #
 # Copies the template (refreshed to the latest upstream), runs git init + an
 # initial commit. Mirrors the in-app "New project from template" flow on the
@@ -10,7 +11,14 @@
 set -euo pipefail
 
 NAME="${1:?usage: bin/new-project <name> [parent-dir]}"
-PARENT="${2:-$HOME/CompSci/gauntlet}"
+# default parent = the app's configured projects dir (Settings), else $HOME
+SETTINGS="$HOME/.config/gauntlet-terminal/settings.json"
+DEFAULT_PARENT="$HOME"
+if [ -f "$SETTINGS" ]; then
+  pd="$(grep -o '"projectsDir"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS" | sed 's/.*:[[:space:]]*"//;s/"$//')"
+  [ -n "$pd" ] && DEFAULT_PARENT="$pd"
+fi
+PARENT="${2:-$DEFAULT_PARENT}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEMPLATE="$ROOT/templates/project-template"
 SAFE="$(printf '%s' "$NAME" | tr -cs '[:alnum:]._-' '-' | sed 's/^-*//;s/-*$//')"

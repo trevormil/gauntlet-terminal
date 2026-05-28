@@ -2,6 +2,14 @@
   "name": "gauntlet-terminal",
   "version": "0.1.0",
   "description": "An alt-terminal for Claude Code: hosts the real CLI with a pluggable copilot sidebar.",
+  "author": "Trevor Miller",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trevormil/gauntlet-terminal.git"
+  },
+  "homepage": "https://github.com/trevormil/gauntlet-terminal#readme",
+  "bugs": "https://github.com/trevormil/gauntlet-terminal/issues",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
