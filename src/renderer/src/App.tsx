@@ -1,8 +1,10 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, LayoutDashboard } from 'lucide-react'
 import { EntryScreen, type Choice } from './components/EntryScreen'
+import { FleetView } from './components/FleetView'
 import { SessionView, type Info } from './SessionView'
 import logo from './assets/logo.png'
+import type { FleetSession } from './lib/types'
 
 const drag = { WebkitAppRegion: 'drag' } as CSSProperties
 const noDrag = { WebkitAppRegion: 'no-drag' } as CSSProperties
@@ -21,12 +23,24 @@ export default function App() {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [adding, setAdding] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
+  const [fleet, setFleet] = useState(false)
+  const [fleetData, setFleetData] = useState<FleetSession[]>([])
 
   // macOS hides the traffic lights in fullscreen — drop the 78px reserve for them
   useEffect(() => {
     window.gt.isFullscreen().then(setFullscreen)
     return window.gt.onFullscreen(setFullscreen)
   }, [])
+
+  // poll the fleet snapshot for the overview + live status dots on the tabs
+  useEffect(() => {
+    if (sessions.length === 0) return
+    const tick = () => window.gt.fleet().then(setFleetData)
+    tick()
+    const id = setInterval(tick, 3000)
+    return () => clearInterval(id)
+  }, [sessions.length])
+  const statusByKey = Object.fromEntries(fleetData.map((f) => [f.key, f.status]))
 
   // tell main which session is active (data IPC reads it)
   useEffect(() => {
@@ -87,8 +101,13 @@ export default function App() {
                 }`}
               >
                 <span
+                  title={statusByKey[s.key] === 'working' ? 'working' : 'idle'}
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    s.choice.mode === 'new' ? 'bg-[var(--gt-accent)]' : 'bg-[var(--gt-accent-2)]'
+                    statusByKey[s.key] === 'working'
+                      ? 'bg-[var(--gt-green)] gt-pulse'
+                      : s.choice.mode === 'new'
+                        ? 'bg-[var(--gt-accent)]'
+                        : 'bg-[var(--gt-accent-2)]'
                   }`}
                 />
                 <span className="max-w-[160px] truncate">{labelFor(s)}</span>
@@ -113,6 +132,21 @@ export default function App() {
             <Plus size={14} strokeWidth={2.5} />
           </button>
         </div>
+        {sessions.length > 0 && (
+          <button
+            style={noDrag}
+            onClick={() => setFleet((f) => !f)}
+            title="Fleet overview — all sessions at a glance"
+            className={`ml-1 flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
+              fleet
+                ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
+                : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'
+            }`}
+          >
+            <LayoutDashboard size={13} strokeWidth={2} />
+            Fleet
+          </button>
+        )}
       </header>
 
       {/* one SessionView per session; all mounted (PTYs persist), only active visible.
@@ -133,6 +167,23 @@ export default function App() {
             />
           </div>
         ))}
+        {fleet && !showEntry && (
+          <div className="absolute inset-0 z-40 bg-[var(--gt-bg)]">
+            <FleetView
+              sessions={fleetData}
+              activeKey={activeKey}
+              onPick={(key) => {
+                setActiveKey(key)
+                setFleet(false)
+              }}
+              onNew={() => {
+                setFleet(false)
+                setAdding(true)
+              }}
+              onClose={() => setFleet(false)}
+            />
+          </div>
+        )}
         {showEntry && (
           <div className="absolute inset-0 z-50 bg-[var(--gt-bg)]">
             <EntryScreen

@@ -16,6 +16,7 @@ const gt = {
   startSession: (key: string, opts: StartOpts) => ipcRenderer.invoke('session:start', key, opts),
   setActiveSession: (key: string) => ipcRenderer.invoke('session:setActive', key),
   stopSession: (key: string) => ipcRenderer.invoke('session:stop', key),
+  fleet: () => ipcRenderer.invoke('fleet:list'),
   pickDir: () => ipcRenderer.invoke('dialog:pickDir'),
   gauntletDirs: () => ipcRenderer.invoke('dirs:gauntlet'),
   scaffoldProject: (name: string, parentDir?: string) =>

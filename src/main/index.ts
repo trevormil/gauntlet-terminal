@@ -284,6 +284,38 @@ ipcMain.handle('sessions:list', () => listSessions())
 ipcMain.handle('session:start', (_e, key: string, opts: StartOpts) => startSession(key, opts))
 ipcMain.handle('session:setActive', (_e, key: string) => setActiveSession(key))
 ipcMain.handle('session:stop', (_e, key: string) => stopSession(key))
+// Fleet snapshot: a summary of every live session (for the cross-session
+// overview + the live status dots on the session tabs).
+ipcMain.handle('fleet:list', () => {
+  const out = []
+  for (const [key, s] of sessions) {
+    const sid = s.pinned.sessionId
+    const st = readTranscriptStats(sid)
+    let status: 'working' | 'idle' = 'idle'
+    const f = sid ? findSessionFile(sid) : null
+    if (f) {
+      const t = lastAssistantTurn(f)
+      if (t && !t.endTurn) status = 'working'
+    }
+    out.push({
+      key,
+      sessionId: sid,
+      name: s.pinned.name || basename(s.pinned.cwd) || 'session',
+      cwd: s.pinned.cwd,
+      repo: repoForCwd(s.pinned.cwd)?.path || basename(repoRootOf(s.pinned.cwd) || s.pinned.cwd),
+      branch: st.gitBranch,
+      model: st.model,
+      status,
+      contextPct: st.contextPct,
+      contextTokens: st.contextTokens,
+      contextLimit: st.contextLimit,
+      turns: st.turns,
+      aiTitle: st.aiTitle,
+      lastAction: st.lastAction,
+    })
+  }
+  return out
+})
 ipcMain.handle('dirs:gauntlet', () => {
   const base = join(homedir(), 'CompSci', 'gauntlet')
   try {

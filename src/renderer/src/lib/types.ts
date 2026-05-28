@@ -218,6 +218,23 @@ export type SessionMeta = {
   mtime: number
 }
 
+export type FleetSession = {
+  key: string
+  sessionId: string
+  name: string
+  cwd: string
+  repo: string
+  branch: string
+  model: string
+  status: 'working' | 'idle'
+  contextPct: number
+  contextTokens: number
+  contextLimit: number
+  turns: number
+  aiTitle: string
+  lastAction: { tool: string; detail: string } | null
+}
+
 export type StartOpts = {
   mode: 'new' | 'resume'
   sessionId?: string
@@ -252,6 +269,7 @@ export type GtApi = {
   startSession: (key: string, opts: StartOpts) => Promise<{ sessionId: string; cwd: string }>
   setActiveSession: (key: string) => Promise<void>
   stopSession: (key: string) => Promise<void>
+  fleet: () => Promise<FleetSession[]>
   pickDir: () => Promise<string | null>
   gauntletDirs: () => Promise<{ name: string; path: string }[]>
   scaffoldProject: (
