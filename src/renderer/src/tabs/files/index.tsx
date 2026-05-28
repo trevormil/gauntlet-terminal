@@ -186,6 +186,26 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
     if (await window.gt.files.write(activeFile.path, activeFile.content)) patch(activeFile.path, { dirty: false })
   }
 
+  // auto-save: debounce a write per file on edit (no ⌘S needed). Keyed by path
+  // + content so a tab switch can't save the wrong file.
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const scheduleSave = (path: string, content: string) => {
+    clearTimeout(saveTimers.current[path])
+    saveTimers.current[path] = setTimeout(async () => {
+      if (await window.gt.files.write(path, content)) patch(path, { dirty: false })
+    }, 700)
+  }
+  // flush any pending saves when leaving the Files tab
+  const openRef = useRef(open)
+  openRef.current = open
+  useEffect(
+    () => () => {
+      for (const t of Object.values(saveTimers.current)) clearTimeout(t)
+      for (const f of openRef.current) if (f.dirty && !f.err) window.gt.files.write(f.path, f.content)
+    },
+    [],
+  )
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
@@ -294,13 +314,11 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
         )}
         <div className="flex-1" />
         {activeFile && !activeFile.err && (
-          <button
-            onClick={save}
-            disabled={!activeFile.dirty}
-            className="shrink-0 px-3 text-[11px] text-zinc-400 hover:text-zinc-100 disabled:opacity-30"
+          <span
+            className={`shrink-0 px-3 text-[11px] ${activeFile.dirty ? 'text-amber-400' : 'text-zinc-600'}`}
           >
-            Save ⌘S
-          </button>
+            {activeFile.dirty ? 'saving…' : 'saved'}
+          </span>
         )}
       </div>
 
@@ -319,7 +337,10 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
             <CodeEditor
               key={activeFile.path}
               value={activeFile.content}
-              onChange={(v) => patch(activeFile.path, { content: v, dirty: true })}
+              onChange={(v) => {
+                patch(activeFile.path, { content: v, dirty: true })
+                scheduleSave(activeFile.path, v)
+              }}
               extensions={langFor(activeFile.path)}
               scrollToLine={activeFile.scrollLine}
             />

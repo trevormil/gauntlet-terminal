@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Badge } from '../../components/ui'
+import { EnginePicker } from '../../components/EnginePicker'
 import type { BadgeTone } from '../../components/ui'
 import type { Tab, TabContext, Agent, AgentRun, Schedule, Engine, Cadence } from '../../lib/types'
 
@@ -35,7 +36,10 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [outputs, setOutputs] = useState<Record<string, string>>({})
   const [sel, setSel] = useState<string | null>(null)
-  const [engine, setEngine] = useState<Engine>('codex')
+  // engine is chosen per-run (two Run buttons); schedules keep a per-agent engine
+  const [schedEngine, setSchedEngine] = useState<Record<string, Engine>>({})
+  const engOf = (id: string): Engine => schedEngine[id] || 'codex'
+  const [picking, setPicking] = useState<{ id: string; title: string } | null>(null)
   const logRef = useRef<HTMLPreElement>(null)
 
   const refreshSchedules = () => window.gt.schedules.list().then(setSchedules)
@@ -85,7 +89,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     if (el) el.scrollTop = el.scrollHeight
   }, [sel, selectedRun && outputs[selectedRun.id]])
 
-  const run = async (id: string) => {
+  const run = async (id: string, engine: Engine) => {
     const r = await window.gt.agents.run(id, engine)
     if ('error' in r) {
       setOutputs((o) => ({ ...o, __err: r.error }))
@@ -99,7 +103,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     const existing = scheduleFor(a.id)
     if (existing) await window.gt.schedules.remove(existing.id)
     if (cadence !== 'off')
-      await window.gt.schedules.add({ agentId: a.id, agentTitle: a.title, engine, cadence })
+      await window.gt.schedules.add({ agentId: a.id, agentTitle: a.title, engine: engOf(a.id), cadence })
     refreshSchedules()
   }
 
@@ -114,21 +118,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
         <span className="text-[11px] text-zinc-600">
           own worktree · opens a PR · {ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}
         </span>
-        <div className="flex-1" />
-        <span className="text-[10px] uppercase tracking-wide text-zinc-600">engine</span>
-        <div className="flex rounded-md border border-[var(--gt-border)] p-0.5">
-          {ENGINES.map((e) => (
-            <button
-              key={e}
-              onClick={() => setEngine(e)}
-              className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                engine === e ? 'bg-[var(--gt-accent)]/20 text-zinc-100' : 'text-zinc-500 hover:text-zinc-200'
-              }`}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -155,7 +144,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                         )}
                       </div>
                       <button
-                        onClick={() => run(a.id)}
+                        onClick={() => setPicking({ id: a.id, title: a.title })}
                         disabled={busy}
                         className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[var(--gt-accent)] px-3 py-1.5 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
                       >
@@ -186,12 +175,20 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                           </option>
                         ))}
                       </select>
-                      {sched && (
-                        <span className="text-zinc-600">
-                          · {sched.engine}
-                          {sched.lastRun ? ` · last ${reltime(sched.lastRun)} ago` : ' · pending'}
-                        </span>
-                      )}
+                      <div className="flex rounded border border-[var(--gt-border)]">
+                        {ENGINES.map((e) => (
+                          <button
+                            key={e}
+                            onClick={() => setSchedEngine((s) => ({ ...s, [a.id]: e }))}
+                            className={`px-1.5 py-0.5 text-[9.5px] ${
+                              engOf(a.id) === e ? 'bg-[var(--gt-accent)]/20 text-zinc-200' : 'text-zinc-600 hover:text-zinc-300'
+                            }`}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                      {sched?.lastRun && <span className="text-zinc-600">· last {reltime(sched.lastRun)} ago</span>}
                     </div>
                   </div>
                 )
@@ -273,6 +270,17 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
           )}
         </div>
       </div>
+
+      {picking && (
+        <EnginePicker
+          title={`Run · ${picking.title}`}
+          onClose={() => setPicking(null)}
+          onPick={(e) => {
+            run(picking.id, e)
+            setPicking(null)
+          }}
+        />
+      )}
     </div>
   )
 }
