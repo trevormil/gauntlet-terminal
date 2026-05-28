@@ -16,13 +16,13 @@ describe('forgeKindForHost', () => {
     expect(forgeKindForHost('gist.github.com', 'auto')).toBe('github')
   })
   test('anything else → gitlab when auto', () => {
-    expect(forgeKindForHost('labs.gauntletai.com', 'auto')).toBe('gitlab')
+    expect(forgeKindForHost('gitlab.example.com', 'auto')).toBe('gitlab')
     expect(forgeKindForHost('gitlab.com', 'auto')).toBe('gitlab')
     expect(forgeKindForHost('', 'auto')).toBe('gitlab')
   })
   test('explicit pref overrides the host', () => {
     expect(forgeKindForHost('github.com', 'gitlab')).toBe('gitlab')
-    expect(forgeKindForHost('labs.gauntletai.com', 'github')).toBe('github')
+    expect(forgeKindForHost('gitlab.example.com', 'github')).toBe('github')
   })
   test('does not match lookalike hosts', () => {
     expect(forgeKindForHost('notgithub.com', 'auto')).toBe('gitlab')

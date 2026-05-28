@@ -3,16 +3,16 @@ import { parseRemote } from './repo'
 
 describe('parseRemote', () => {
   test('https URL → host + path, strips .git', () => {
-    expect(parseRemote('https://labs.gauntletai.com/trevormiller/agentforge.git')).toEqual({
-      host: 'labs.gauntletai.com',
-      path: 'trevormiller/agentforge',
+    expect(parseRemote('https://gitlab.example.com/owner/project.git')).toEqual({
+      host: 'gitlab.example.com',
+      path: 'owner/project',
     })
   })
 
   test('https without .git', () => {
-    expect(parseRemote('https://github.com/trevormil/gauntlet-terminal')).toEqual({
+    expect(parseRemote('https://github.com/owner/repo')).toEqual({
       host: 'github.com',
-      path: 'trevormil/gauntlet-terminal',
+      path: 'owner/repo',
     })
   })
 
@@ -24,15 +24,15 @@ describe('parseRemote', () => {
   })
 
   test('ssh:// URL with nested group path', () => {
-    expect(parseRemote('ssh://git@labs.gauntletai.com/group/sub/proj.git')).toEqual({
-      host: 'labs.gauntletai.com',
+    expect(parseRemote('ssh://git@gitlab.example.com/group/sub/proj.git')).toEqual({
+      host: 'gitlab.example.com',
       path: 'group/sub/proj',
     })
   })
 
   test('https with embedded credentials', () => {
-    expect(parseRemote('https://user:token@labs.gauntletai.com/a/b.git')).toEqual({
-      host: 'labs.gauntletai.com',
+    expect(parseRemote('https://user:token@gitlab.example.com/a/b.git')).toEqual({
+      host: 'gitlab.example.com',
       path: 'a/b',
     })
   })

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Gauntlet Terminal — one-line installer (macOS).
-#   curl -fsSL https://labs.gauntletai.com/trevormiller/gauntlet-terminal/-/raw/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/trevormil/gauntlet-terminal/main/install.sh | bash
 set -euo pipefail
 
-REPO="https://labs.gauntletai.com/trevormiller/gauntlet-terminal.git"
+REPO="https://github.com/trevormil/gauntlet-terminal.git"
 DIR="${1:-$HOME/gauntlet-terminal}"
 
 echo "◆ Gauntlet Terminal installer"
@@ -26,6 +26,8 @@ else
 fi
 
 cd "$DIR"
+echo "▸ Fetching the project-template submodule (for scaffolding)…"
+git submodule update --init >/dev/null 2>&1 || true
 echo "▸ Installing dependencies (rebuilds node-pty for Electron)…"
 bun install
 
@@ -33,4 +35,5 @@ echo ""
 echo "✓ Installed. Launch with:"
 echo "    cd $DIR && bun run dev"
 echo ""
-echo "  Point it at a project:   GT_CWD=~/your/project bun run dev"
+echo "  On first launch, onboarding detects your tools; pick any folder to"
+echo "  attach a Claude session from the session picker."
