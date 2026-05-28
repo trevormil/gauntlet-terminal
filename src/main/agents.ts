@@ -161,7 +161,14 @@ export function runAgent(repoRoot: string, agentId: string): AgentRun | { error:
   // run codex through a login shell so $PATH includes brew (codex isn't on a GUI
   // app's default PATH)
   const cmd = `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(agent.prompt)}`
-  const p = spawn(LOGIN_SHELL, ['-l', '-c', cmd], { cwd: worktree, env: process.env })
+  // stdin must be /dev/null (not an open pipe): codex reads "additional input
+  // from stdin" and would block forever on an empty open pipe. ignore = EOF, so
+  // it proceeds with the prompt arg.
+  const p = spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
+    cwd: worktree,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
   procs.set(run.id, p)
 
   const append = (d: Buffer) => {
