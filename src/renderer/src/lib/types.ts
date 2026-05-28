@@ -163,14 +163,16 @@ export type TddInfo = {
 
 export type GtApi = {
   listSessions: () => Promise<SessionMeta[]>
-  startSession: (opts: StartOpts) => Promise<{ sessionId: string; cwd: string }>
+  startSession: (key: string, opts: StartOpts) => Promise<{ sessionId: string; cwd: string }>
+  setActiveSession: (key: string) => Promise<void>
+  stopSession: (key: string) => Promise<void>
   pickDir: () => Promise<string | null>
   gauntletDirs: () => Promise<{ name: string; path: string }[]>
   pty: {
-    input: (data: string) => void
-    resize: (size: { cols: number; rows: number }) => void
-    onData: (cb: (data: string) => void) => () => void
-    onExit: (cb: (code: number) => void) => () => void
+    input: (key: string, data: string) => void
+    resize: (key: string, size: { cols: number; rows: number }) => void
+    onData: (cb: (key: string, data: string) => void) => () => void
+    onExit: (cb: (key: string, code: number) => void) => () => void
   }
   transcript: () => Promise<TranscriptStats>
   harnessTdd: () => Promise<TddInfo>

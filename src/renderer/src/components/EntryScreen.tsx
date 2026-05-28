@@ -14,7 +14,13 @@ const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, '~')
 const underDir = (sessionCwd: string, dir: string) =>
   sessionCwd === dir || sessionCwd.startsWith(dir.replace(/\/$/, '') + '/')
 
-export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
+export function EntryScreen({
+  onChoose,
+  onCancel,
+}: {
+  onChoose: (c: Choice) => void
+  onCancel?: () => void
+}) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null)
   const [dirs, setDirs] = useState<{ name: string; path: string }[]>([])
   const [cwd, setCwd] = useState('') // new-session target
@@ -52,6 +58,15 @@ export function EntryScreen({ onChoose }: { onChoose: (c: Choice) => void }) {
         <div className="mb-1 flex items-center gap-2">
           <span className="text-2xl text-[var(--gt-accent)]">◆</span>
           <h1 className="text-2xl font-bold tracking-tight">Gauntlet Terminal</h1>
+          <div className="flex-1" />
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="rounded-md px-2 py-1 text-[12px] text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+            >
+              ✕ cancel
+            </button>
+          )}
         </div>
         <p className="mb-6 text-sm text-zinc-500">
           Attach to a Claude session. This window pins to it — context, usage, and telemetry all

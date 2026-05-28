@@ -8,9 +8,11 @@ import type { Choice } from './EntryScreen'
 // `claude` attached to the chosen session. Same pattern VS Code's integrated
 // terminal uses.
 export function TerminalPane({
+  sessionKey,
   choice,
   onStarted,
 }: {
+  sessionKey: string
   choice: Choice
   onStarted?: (info: { sessionId: string; cwd: string }) => void
 }) {
@@ -51,7 +53,7 @@ export function TerminalPane({
         return false
       }
       if (e.key === 'v') {
-        gt.clipboardRead().then((t) => t && gt.pty.input(t))
+        gt.clipboardRead().then((t) => t && gt.pty.input(sessionKey, t))
         return false
       }
       return true
@@ -60,16 +62,19 @@ export function TerminalPane({
     const onContext = (e: MouseEvent) => {
       e.preventDefault()
       if (term.hasSelection()) gt.clipboardWrite(term.getSelection())
-      else gt.clipboardRead().then((t) => t && gt.pty.input(t))
+      else gt.clipboardRead().then((t) => t && gt.pty.input(sessionKey, t))
     }
     el.addEventListener('contextmenu', onContext)
     // attach listeners BEFORE starting the pty so no early output is missed.
-    const offData = gt.pty.onData((d) => term.write(d))
-    const offExit = gt.pty.onExit(() => term.write('\r\n\x1b[2m── process exited ──\x1b[0m\r\n'))
-    const onInput = term.onData((d) => gt.pty.input(d))
+    // Filter by sessionKey: every session's pty streams to all listeners.
+    const offData = gt.pty.onData((key, d) => key === sessionKey && term.write(d))
+    const offExit = gt.pty.onExit(
+      (key) => key === sessionKey && term.write('\r\n\x1b[2m── process exited ──\x1b[0m\r\n'),
+    )
+    const onInput = term.onData((d) => gt.pty.input(sessionKey, d))
 
     // spawn `claude` attached to the chosen session, sized to the live terminal
-    gt.startSession({ ...choice, cols: term.cols, rows: term.rows }).then((info) =>
+    gt.startSession(sessionKey, { ...choice, cols: term.cols, rows: term.rows }).then((info) =>
       onStarted?.(info),
     )
 
@@ -85,7 +90,7 @@ export function TerminalPane({
         if (!dims || !dims.cols || !dims.rows) return
         if (dims.cols === term.cols && dims.rows === term.rows) return
         fit.fit()
-        gt.pty.resize({ cols: term.cols, rows: term.rows })
+        gt.pty.resize(sessionKey, { cols: term.cols, rows: term.rows })
       })
     })
     ro.observe(el)

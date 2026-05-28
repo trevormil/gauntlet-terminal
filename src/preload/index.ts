@@ -11,23 +11,26 @@ type StartOpts = {
 
 // The single bridge the renderer (and every plugin) talks to.
 const gt = {
-  // session lifecycle
+  // session lifecycle (each session keyed by a renderer-generated id)
   listSessions: () => ipcRenderer.invoke('sessions:list'),
-  startSession: (opts: StartOpts) => ipcRenderer.invoke('session:start', opts),
+  startSession: (key: string, opts: StartOpts) => ipcRenderer.invoke('session:start', key, opts),
+  setActiveSession: (key: string) => ipcRenderer.invoke('session:setActive', key),
+  stopSession: (key: string) => ipcRenderer.invoke('session:stop', key),
   pickDir: () => ipcRenderer.invoke('dialog:pickDir'),
   gauntletDirs: () => ipcRenderer.invoke('dirs:gauntlet'),
 
-  // terminal io (the pty is spawned by startSession)
+  // terminal io, routed by session key (the pty is spawned by startSession)
   pty: {
-    input: (data: string) => ipcRenderer.send('pty:input', data),
-    resize: (size: { cols: number; rows: number }) => ipcRenderer.send('pty:resize', size),
-    onData: (cb: (data: string) => void) => {
-      const h = (_e: unknown, d: string) => cb(d)
+    input: (key: string, data: string) => ipcRenderer.send('pty:input', key, data),
+    resize: (key: string, size: { cols: number; rows: number }) =>
+      ipcRenderer.send('pty:resize', key, size),
+    onData: (cb: (key: string, data: string) => void) => {
+      const h = (_e: unknown, key: string, d: string) => cb(key, d)
       ipcRenderer.on('pty:data', h)
       return () => ipcRenderer.removeListener('pty:data', h)
     },
-    onExit: (cb: (code: number) => void) => {
-      const h = (_e: unknown, c: number) => cb(c)
+    onExit: (cb: (key: string, code: number) => void) => {
+      const h = (_e: unknown, key: string, c: number) => cb(key, c)
       ipcRenderer.on('pty:exit', h)
       return () => ipcRenderer.removeListener('pty:exit', h)
     },

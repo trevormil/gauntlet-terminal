@@ -26,10 +26,13 @@ function send(channel: string, ...args: unknown[]) {
     win.webContents.send(channel, ...args)
   }
 }
-let ptyProc: pty.IPty | null = null
-
-// the single session this window is attached to, for its whole life
-let pinned = { sessionId: '', cwd: '', mode: '' as '' | 'new' | 'resume', name: '' }
+// One window now hosts MANY sessions, each its own PTY, keyed by a renderer-
+// generated tab key. Data IPC reads the *active* session; PTY IPC is routed by
+// key so every (even backgrounded) terminal keeps streaming.
+type Pinned = { sessionId: string; cwd: string; mode: '' | 'new' | 'resume'; name: string }
+const sessions = new Map<string, { pty: pty.IPty; pinned: Pinned }>()
+let activeKey = ''
+const cur = (): Pinned => sessions.get(activeKey)?.pinned ?? { sessionId: '', cwd: '', mode: '', name: '' }
 
 type StartOpts = {
   mode: 'new' | 'resume'
@@ -42,8 +45,8 @@ type StartOpts = {
 
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`)
 
-function startSession(opts: StartOpts) {
-  ptyProc?.kill()
+function startSession(key: string, opts: StartOpts) {
+  sessions.get(key)?.pty.kill()
 
   const cwd = opts.cwd || homedir()
   const args: string[] = []
@@ -58,24 +61,47 @@ function startSession(opts: StartOpts) {
     if (opts.name) args.push('--name', opts.name)
   }
 
-  pinned = { sessionId, cwd, mode: opts.mode, name: opts.name || '' }
-  watchSession()
-
   const cmd = [CLAUDE, ...args].map(shq).join(' ')
-  ptyProc = pty.spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
+  const proc = pty.spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
     name: 'xterm-256color',
     cols: opts.cols || 80,
     rows: opts.rows || 30,
     cwd,
     env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
   })
-  ptyProc.onData((d) => send('pty:data', d))
-  ptyProc.onExit(({ exitCode }) => send('pty:exit', exitCode))
+  proc.onData((d) => send('pty:data', key, d))
+  proc.onExit(({ exitCode }) => send('pty:exit', key, exitCode))
 
+  sessions.set(key, { pty: proc, pinned: { sessionId, cwd, mode: opts.mode, name: opts.name || '' } })
+  activeKey = key
+  watchSession()
   return { sessionId, cwd }
 }
 
-// Watch the attached session's transcript and push a tick the instant it grows
+function setActiveSession(key: string) {
+  if (sessions.has(key)) {
+    activeKey = key
+    watchSession()
+  }
+}
+
+function stopSession(key: string) {
+  const s = sessions.get(key)
+  if (s) {
+    try {
+      s.pty.kill()
+    } catch {
+      /* already gone */
+    }
+    sessions.delete(key)
+  }
+  if (activeKey === key) {
+    activeKey = sessions.keys().next().value ?? ''
+    watchSession()
+  }
+}
+
+// Watch the ACTIVE session's transcript and push a tick the instant it grows
 // (i.e. as the agent writes each turn / tool call) so realtime widgets refresh
 // without waiting for their poll interval. A cheap stat — no Claude hook needed.
 let watchTimer: ReturnType<typeof setInterval> | null = null
@@ -86,9 +112,10 @@ function watchSession() {
   watchedFile = ''
   lastMtime = 0
   watchTimer = setInterval(() => {
-    if (!pinned.sessionId) return
+    const sid = cur().sessionId
+    if (!sid) return
     if (!watchedFile) {
-      const f = findSessionFile(pinned.sessionId)
+      const f = findSessionFile(sid)
       if (!f) return
       watchedFile = f
     }
@@ -132,7 +159,9 @@ function createWindow() {
 
 // ---- session IPC ----
 ipcMain.handle('sessions:list', () => listSessions())
-ipcMain.handle('session:start', (_e, opts: StartOpts) => startSession(opts))
+ipcMain.handle('session:start', (_e, key: string, opts: StartOpts) => startSession(key, opts))
+ipcMain.handle('session:setActive', (_e, key: string) => setActiveSession(key))
+ipcMain.handle('session:stop', (_e, key: string) => stopSession(key))
 ipcMain.handle('dirs:gauntlet', () => {
   const base = join(homedir(), 'CompSci', 'gauntlet')
   try {
@@ -159,64 +188,64 @@ ipcMain.handle('dialog:pickDir', async () => {
   return r.canceled ? null : r.filePaths[0]
 })
 
-// ---- PTY IPC ----
-ipcMain.on('pty:input', (_e, data: string) => ptyProc?.write(data))
-ipcMain.on('pty:resize', (_e, size: { cols: number; rows: number }) => {
+// ---- PTY IPC (routed by session key) ----
+ipcMain.on('pty:input', (_e, key: string, data: string) => sessions.get(key)?.pty.write(data))
+ipcMain.on('pty:resize', (_e, key: string, size: { cols: number; rows: number }) => {
   try {
-    ptyProc?.resize(size.cols, size.rows)
+    sessions.get(key)?.pty.resize(size.cols, size.rows)
   } catch {
     /* ignore transient resize errors */
   }
 })
 
 // ---- data IPC (plugin pollers; all keyed to the attached session) ----
-ipcMain.handle('data:transcript', () => readTranscriptStats(pinned.sessionId))
-ipcMain.handle('data:harness-tdd', () => readHarnessTdd(pinned.cwd))
+ipcMain.handle('data:transcript', () => readTranscriptStats(cur().sessionId))
+ipcMain.handle('data:harness-tdd', () => readHarnessTdd(cur().cwd))
 ipcMain.handle('data:usage', () => readUsage())
-ipcMain.handle('data:git-status', () => gitStatus(pinned.cwd))
-ipcMain.handle('data:mr-summary', () => mrSummary(repoRootOf(pinned.cwd)))
-ipcMain.handle('data:meta', () => ({ ...pinned, claude: CLAUDE }))
+ipcMain.handle('data:git-status', () => gitStatus(cur().cwd))
+ipcMain.handle('data:mr-summary', () => mrSummary(repoRootOf(cur().cwd)))
+ipcMain.handle('data:meta', () => ({ ...cur(), claude: CLAUDE }))
 
 // ---- command widgets (declarative, per-repo extensible) ----
-ipcMain.handle('widgets:list', () => listCommandWidgets(pinned.cwd))
-ipcMain.handle('widgets:run', (_e, command: string) => runCommand(command, pinned.cwd))
+ipcMain.handle('widgets:list', () => listCommandWidgets(cur().cwd))
+ipcMain.handle('widgets:run', (_e, command: string) => runCommand(command, cur().cwd))
 
 // ---- tabs: repo context + tickets/MRs (scoped to the session's repo) ----
 ipcMain.handle('tab:context', () => {
-  const repoRoot = repoRootOf(pinned.cwd)
-  const repo = repoForCwd(pinned.cwd)
+  const repoRoot = repoRootOf(cur().cwd)
+  const repo = repoForCwd(cur().cwd)
   return {
-    cwd: pinned.cwd,
-    sessionId: pinned.sessionId,
+    cwd: cur().cwd,
+    sessionId: cur().sessionId,
     repoRoot,
     repoPath: repo?.path || '',
     repoHost: repo?.host || '',
     hasBacklog: !!repoRoot && existsSync(join(repoRoot, 'backlog')),
   }
 })
-ipcMain.handle('tickets:list', () => listTickets(repoRootOf(pinned.cwd)))
-ipcMain.handle('tickets:get', (_e, slug: string) => getTicket(repoRootOf(pinned.cwd), slug))
+ipcMain.handle('tickets:list', () => listTickets(repoRootOf(cur().cwd)))
+ipcMain.handle('tickets:get', (_e, slug: string) => getTicket(repoRootOf(cur().cwd), slug))
 ipcMain.handle('tickets:create', (_e, input: NewTicket) =>
-  createTicket(repoRootOf(pinned.cwd), input),
+  createTicket(repoRootOf(cur().cwd), input),
 )
 ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; priority?: string }) =>
-  updateTicket(repoRootOf(pinned.cwd), slug, patch),
+  updateTicket(repoRootOf(cur().cwd), slug, patch),
 )
-ipcMain.handle('mrs:list', () => listMrs(repoRootOf(pinned.cwd)))
-ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(pinned.cwd), iid))
-ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(pinned.cwd), iid))
+ipcMain.handle('mrs:list', () => listMrs(repoRootOf(cur().cwd)))
+ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(cur().cwd), iid))
+ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(cur().cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
 ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
 ipcMain.handle('clipboard:read', () => clipboard.readText())
 
 // ---- notes (repo-bound + global, persisted) ----
-ipcMain.handle('notes:read', (_e, scope: NotesScope) => readNotes(scope, repoRootOf(pinned.cwd)))
+ipcMain.handle('notes:read', (_e, scope: NotesScope) => readNotes(scope, repoRootOf(cur().cwd)))
 ipcMain.handle('notes:write', (_e, scope: NotesScope, content: string) =>
-  writeNotes(scope, content, repoRootOf(pinned.cwd)),
+  writeNotes(scope, content, repoRootOf(cur().cwd)),
 )
 
 // ---- files (Cursor-like editor; scoped to repo root / cwd) ----
-const filesRoot = () => repoRootOf(pinned.cwd) || pinned.cwd || homedir()
+const filesRoot = () => repoRootOf(cur().cwd) || cur().cwd || homedir()
 ipcMain.handle('files:list', (_e, rel: string) => listDir(filesRoot(), rel || ''))
 ipcMain.handle('files:read', (_e, rel: string) => readFile(filesRoot(), rel))
 ipcMain.handle('files:write', (_e, rel: string, content: string) =>
