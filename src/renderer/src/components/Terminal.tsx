@@ -50,13 +50,25 @@ export function TerminalPane({
       onStarted?.(info),
     )
 
+    // Debounce fit to a frame and only resize when the cell grid actually
+    // changes — calling fit() synchronously inside the observer makes xterm
+    // re-layout, which re-fires the observer ("ResizeObserver loop") and
+    // thrashes the layout (visible flicker).
+    let raf = 0
     const ro = new ResizeObserver(() => {
-      fit.fit()
-      gt.pty.resize({ cols: term.cols, rows: term.rows })
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const dims = fit.proposeDimensions()
+        if (!dims || !dims.cols || !dims.rows) return
+        if (dims.cols === term.cols && dims.rows === term.rows) return
+        fit.fit()
+        gt.pty.resize({ cols: term.cols, rows: term.rows })
+      })
     })
     ro.observe(el)
 
     return () => {
+      cancelAnimationFrame(raf)
       offData()
       offExit()
       onInput.dispose()

@@ -3,6 +3,7 @@ import { TerminalPane } from './components/Terminal'
 import { PluginWidget } from './components/PluginWidget'
 import { PluginDrawer } from './components/PluginDrawer'
 import { EntryScreen, type Choice } from './components/EntryScreen'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ALL_PLUGINS } from './plugins/registry'
 import { ALL_TABS } from './tabs/registry'
 import { commandWidgetToPlugin } from './lib/commandWidget'
@@ -234,7 +235,9 @@ export default function App() {
         {/* full-screen tab */}
         {!onTerminal && ActiveTab && ctx && (
           <div className="min-h-0 flex-1">
-            <ActiveTab.Component ctx={ctx} />
+            <ErrorBoundary label={ActiveTab.title}>
+              <ActiveTab.Component ctx={ctx} />
+            </ErrorBoundary>
           </div>
         )}
       </div>

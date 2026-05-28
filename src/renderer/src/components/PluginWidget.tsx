@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ErrorBoundary } from './ErrorBoundary'
 import type { Plugin } from '../lib/types'
 
 // Runs one plugin's poll loop and renders its card. `prev` is threaded into poll
@@ -48,7 +49,7 @@ export function PluginWidget({
           ×
         </button>
       )}
-      {plugin.render(data as never)}
+      <ErrorBoundary label={plugin.title}>{plugin.render(data as never)}</ErrorBoundary>
     </div>
   )
 }
