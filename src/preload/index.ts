@@ -42,6 +42,7 @@ const gt = {
   usage: () => ipcRenderer.invoke('data:usage'),
   gitStatus: () => ipcRenderer.invoke('data:git-status'),
   mrSummary: () => ipcRenderer.invoke('data:mr-summary'),
+  sessionTasks: () => ipcRenderer.invoke('data:session-tasks'),
   meta: () => ipcRenderer.invoke('data:meta'),
 
   // command widgets (declarative / per-repo)

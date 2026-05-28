@@ -14,10 +14,10 @@ export function Card({
   children: ReactNode
 }) {
   return (
-    <div className="mb-2.5 rounded-xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset]">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-sm leading-none">{icon}</span>
-        <span className="flex-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+    <div className="mb-1.5 rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] px-2.5 py-2">
+      <div className="mb-1 flex items-center gap-1.5">
+        <span className="text-[11px] leading-none">{icon}</span>
+        <span className="flex-1 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
           {title}
         </span>
         {right}
@@ -42,9 +42,19 @@ export function Gauge({ pct, color }: { pct: number; color?: string }) {
 export function Big({ value, sub }: { value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className="text-2xl font-bold tabular-nums tracking-tight text-zinc-50">{value}</span>
-      {sub && <span className="text-[11px] text-zinc-500">{sub}</span>}
+      <span className="text-lg font-bold tabular-nums tracking-tight text-zinc-50">{value}</span>
+      {sub && <span className="text-[10.5px] text-zinc-500">{sub}</span>}
     </div>
+  )
+}
+
+/** Compact label:value pill for cramming many metrics into one row. */
+export function Stat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span className="text-[12px] font-semibold tabular-nums text-zinc-100">{value}</span>
+      <span className="text-[9.5px] uppercase tracking-wide text-zinc-600">{label}</span>
+    </span>
   )
 }
 

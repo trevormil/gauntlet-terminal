@@ -17,9 +17,15 @@ export type TranscriptStats = {
   turns: number
   lastAction: { tool: string; detail: string } | null
   firstUserText: string
+  aiTitle: string
+  permissionMode: string
+  lastPrompt: string
+  toolCounts: Record<string, number>
   mtime: number
   ts: number
 }
+
+export type TaskItem = { id: string; subject: string; status: string; activeForm: string }
 
 export type UsageWindow = { pct: number; resetsAt: number | null } | null
 export type Usage = {
@@ -179,6 +185,7 @@ export type GtApi = {
   usage: () => Promise<Usage>
   gitStatus: () => Promise<GitStatus>
   mrSummary: () => Promise<MrSummary>
+  sessionTasks: () => Promise<TaskItem[]>
   meta: () => Promise<SessionInfo>
   listCommandWidgets: () => Promise<CommandWidget[]>
   runCommand: (command: string) => Promise<CommandResult>

@@ -4,7 +4,13 @@ import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { statSync, existsSync, readdirSync } from 'node:fs'
 import * as pty from 'node-pty'
-import { readTranscriptStats, readHarnessTdd, listSessions, findSessionFile } from './data'
+import {
+  readTranscriptStats,
+  readHarnessTdd,
+  listSessions,
+  findSessionFile,
+  readSessionTasks,
+} from './data'
 import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
 import { repoRootOf, repoForCwd, gitStatus } from './repo'
@@ -203,6 +209,7 @@ ipcMain.handle('data:transcript', () => readTranscriptStats(cur().sessionId))
 ipcMain.handle('data:harness-tdd', () => readHarnessTdd(cur().cwd))
 ipcMain.handle('data:usage', () => readUsage())
 ipcMain.handle('data:git-status', () => gitStatus(cur().cwd))
+ipcMain.handle('data:session-tasks', () => readSessionTasks(cur().sessionId))
 ipcMain.handle('data:mr-summary', () => mrSummary(repoRootOf(cur().cwd)))
 ipcMain.handle('data:meta', () => ({ ...cur(), claude: CLAUDE }))
 

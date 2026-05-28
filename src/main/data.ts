@@ -17,6 +17,36 @@ import { reviewForPrDir, newestPrDirForRepo } from './review'
 // ---------------------------------------------------------------------------
 
 const PROJECTS_DIR = join(homedir(), '.claude', 'projects')
+const TASKS_DIR = join(homedir(), '.claude', 'tasks')
+
+/** The agent's live todo list for a session (~/.claude/tasks/<id>/<n>.json). */
+export function readSessionTasks(sessionId: string): TaskItem[] {
+  if (!sessionId) return []
+  const dir = join(TASKS_DIR, sessionId)
+  if (!existsSync(dir)) return []
+  let files: string[]
+  try {
+    files = readdirSync(dir)
+  } catch {
+    return []
+  }
+  const out: TaskItem[] = []
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue
+    try {
+      const t = JSON.parse(readFileSync(join(dir, f), 'utf8'))
+      out.push({
+        id: String(t.id ?? f.replace(/\.json$/, '')),
+        subject: t.subject || '',
+        status: t.status || 'pending',
+        activeForm: t.activeForm || '',
+      })
+    } catch {
+      /* skip */
+    }
+  }
+  return out.sort((a, b) => Number(a.id) - Number(b.id) || a.id.localeCompare(b.id))
+}
 
 export type TranscriptStats = {
   ok: boolean
@@ -33,9 +63,15 @@ export type TranscriptStats = {
   turns: number
   lastAction: { tool: string; detail: string } | null
   firstUserText: string
+  aiTitle: string
+  permissionMode: string
+  lastPrompt: string
+  toolCounts: Record<string, number>
   mtime: number
   ts: number
 }
+
+export type TaskItem = { id: string; subject: string; status: string; activeForm: string }
 
 export type SessionMeta = {
   id: string
@@ -123,6 +159,10 @@ function emptyStats(sessionId = ''): TranscriptStats {
     turns: 0,
     lastAction: null,
     firstUserText: '',
+    aiTitle: '',
+    permissionMode: '',
+    lastPrompt: '',
+    toolCounts: {},
     mtime: 0,
     ts: Date.now(),
   }
@@ -149,6 +189,10 @@ export function parseTranscriptFile(file: string, sessionId: string): Transcript
   let totalCacheRead = 0
   let turns = 0
   let lastAction: { tool: string; detail: string } | null = null
+  let aiTitle = ''
+  let permissionMode = ''
+  let lastPrompt = ''
+  const toolCounts: Record<string, number> = {}
 
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
@@ -160,6 +204,10 @@ export function parseTranscriptFile(file: string, sessionId: string): Transcript
     }
     if (!cwd && typeof obj.cwd === 'string') cwd = obj.cwd
     if (!gitBranch && typeof obj.gitBranch === 'string') gitBranch = obj.gitBranch
+    // Claude writes these as standalone lines (no message); keep the latest.
+    if (obj.type === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle
+    else if (obj.type === 'permission-mode' && obj.permissionMode) permissionMode = obj.permissionMode
+    else if (obj.type === 'last-prompt' && typeof obj.lastPrompt === 'string') lastPrompt = obj.lastPrompt
 
     const msg = obj.message
     if (!msg) continue
@@ -187,8 +235,10 @@ export function parseTranscriptFile(file: string, sessionId: string): Transcript
     }
     if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
-        if (block?.type === 'tool_use')
+        if (block?.type === 'tool_use') {
           lastAction = { tool: block.name, detail: summarizeToolInput(block.name, block.input) }
+          toolCounts[block.name] = (toolCounts[block.name] || 0) + 1
+        }
       }
     }
   }
@@ -210,6 +260,10 @@ export function parseTranscriptFile(file: string, sessionId: string): Transcript
     turns,
     lastAction,
     firstUserText,
+    aiTitle,
+    permissionMode,
+    lastPrompt,
+    toolCounts,
     mtime,
     ts: Date.now(),
   }
