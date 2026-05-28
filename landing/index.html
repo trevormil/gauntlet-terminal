@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gauntlet Terminal — your coding agent, with a cockpit</title>
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --panel: #12121a;
+        --border: #232334;
+        --accent: #7c5cff;
+        --accent2: #00e0c6;
+        --text: #e7e7ee;
+        --mute: #8a8a9a;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        background-image: radial-gradient(
+            circle at 80% -10%,
+            rgba(124, 92, 255, 0.18),
+            transparent 45%
+          ),
+          radial-gradient(circle at 0% 100%, rgba(0, 224, 198, 0.1), transparent 40%);
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 26px 0;
+      }
+      .logo {
+        color: var(--accent);
+        font-size: 20px;
+      }
+      .brand {
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      header nav {
+        margin-left: auto;
+        display: flex;
+        gap: 18px;
+        font-size: 13px;
+      }
+      header nav a {
+        color: var(--mute);
+        text-decoration: none;
+      }
+      header nav a:hover {
+        color: var(--text);
+      }
+
+      .hero {
+        padding: 56px 0 36px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        color: var(--accent2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 5px 12px;
+        margin-bottom: 22px;
+      }
+      h1 {
+        font-size: 52px;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        font-weight: 800;
+        max-width: 14ch;
+      }
+      h1 .grad {
+        background: linear-gradient(100deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .sub {
+        color: var(--mute);
+        font-size: 17px;
+        max-width: 56ch;
+        margin: 20px 0 28px;
+      }
+      .cmd {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+        font-size: 14px;
+        overflow-x: auto;
+      }
+      .cmd .dollar {
+        color: var(--accent);
+      }
+      .cmd code {
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .copy {
+        margin-left: auto;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--mute);
+        border-radius: 7px;
+        padding: 5px 10px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .copy:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+
+      /* mock app */
+      .mock {
+        margin: 46px 0;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+      }
+      .mock .bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 11px 14px;
+        background: #0c0c12;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--mute);
+      }
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+      .mock .body {
+        display: grid;
+        grid-template-columns: 1fr 240px;
+        min-height: 300px;
+      }
+      .term {
+        padding: 16px;
+        font-size: 13px;
+        background: var(--bg);
+      }
+      .term .p {
+        color: var(--accent2);
+      }
+      .term .line {
+        color: #cfcfdd;
+        margin: 3px 0;
+      }
+      .term .tool {
+        color: var(--mute);
+      }
+      .side {
+        border-left: 1px solid var(--border);
+        background: var(--bg);
+        padding: 12px;
+      }
+      .side .h {
+        font-size: 9px;
+        letter-spacing: 0.18em;
+        color: #5b5b6e;
+        margin-bottom: 10px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        padding: 10px;
+        margin-bottom: 9px;
+      }
+      .card .t {
+        font-size: 9.5px;
+        letter-spacing: 0.12em;
+        color: var(--mute);
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .card .v {
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .gauge {
+        height: 7px;
+        border-radius: 99px;
+        background: #000;
+        margin-top: 7px;
+        overflow: hidden;
+      }
+      .gauge > i {
+        display: block;
+        height: 100%;
+        border-radius: 99px;
+      }
+      .badge {
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid;
+      }
+      .b-ok {
+        color: #6ee7b7;
+        border-color: #34d39955;
+        background: #10b9811a;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin: 40px 0;
+      }
+      .feat {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        background: var(--panel);
+      }
+      .feat .ic {
+        font-size: 22px;
+      }
+      .feat h3 {
+        font-size: 15px;
+        margin: 10px 0 6px;
+      }
+      .feat p {
+        font-size: 13px;
+        color: var(--mute);
+      }
+
+      .snip {
+        margin: 18px 0 50px;
+        background: #0c0c12;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        font-size: 12.5px;
+        white-space: pre;
+        overflow-x: auto;
+        color: #c8c8d6;
+      }
+      .snip .k {
+        color: var(--accent);
+      }
+      .snip .s {
+        color: var(--accent2);
+      }
+      .snip .c {
+        color: #5b5b6e;
+      }
+      h2 {
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--mute);
+        margin: 16px 0;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 26px 0 60px;
+        color: #5b5b6e;
+        font-size: 12px;
+        display: flex;
+        gap: 16px;
+      }
+      footer a {
+        color: var(--mute);
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <span class="logo">◆</span>
+        <span class="brand">Gauntlet Terminal</span>
+        <nav>
+          <a href="#install">Install</a>
+          <a href="#plugins">Plugins</a>
+          <a href="https://labs.gauntletai.com/trevormiller/gauntlet-terminal">Repo</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <span class="tag">⚡ an alt-terminal for Claude Code</span>
+        <h1>Your coding agent, with a <span class="grad">cockpit</span>.</h1>
+        <p class="sub">
+          Run the real <code>claude</code> CLI with a live sidebar bolted on: context window %,
+          token burn, session cost, what the agent is doing right now, and your latest TDD scores —
+          with a stale flag. Every panel is a plugin. Plugins are just folders of code.
+        </p>
+        <div class="cmd" id="install">
+          <span class="dollar">$</span>
+          <code id="cmd-text"
+            >curl -fsSL
+            https://labs.gauntletai.com/trevormiller/gauntlet-terminal/-/raw/main/install.sh |
+            bash</code
+          >
+          <button class="copy" onclick="copyCmd()">copy</button>
+        </div>
+      </section>
+
+      <!-- mock -->
+      <div class="mock">
+        <div class="bar">
+          <span class="dot" style="background: #ff5f57"></span>
+          <span class="dot" style="background: #febc2e"></span>
+          <span class="dot" style="background: #28c840"></span>
+          <span style="margin-left: 8px">◆ Gauntlet Terminal — claude · my-project</span>
+          <span style="margin-left: auto">⧉ Plugins · 4</span>
+        </div>
+        <div class="body">
+          <div class="term">
+            <div class="line"><span class="p">&gt;</span> add a stale-flag to the TDD widget</div>
+            <div class="line tool">● Read&nbsp;&nbsp;src/main/data.ts</div>
+            <div class="line tool">● Edit&nbsp;&nbsp;plugins/tdd/index.tsx</div>
+            <div class="line tool">● Bash&nbsp;&nbsp;bun test &nbsp;<span style="color:#6ee7b7">74/74 pass</span></div>
+            <div class="line"><span class="p">&gt;</span> <span style="opacity:.6">done — the widget now flips to ⚠ stale when HEAD moves ahead of the review.</span></div>
+          </div>
+          <div class="side">
+            <div class="h">COCKPIT · 4 LIVE</div>
+            <div class="card">
+              <div class="t">🧠 Context Window</div>
+              <div class="v">74.9%</div>
+              <div class="gauge">
+                <i style="width: 75%; background: var(--accent2)"></i>
+              </div>
+            </div>
+            <div class="card">
+              <div class="t">⚡ Now Doing</div>
+              <div style="font-size: 13px; font-weight: 600">Bash</div>
+              <div style="font-size: 11px; color: var(--mute)">bun test</div>
+            </div>
+            <div class="card">
+              <div class="t">📊 Plan Usage</div>
+              <div style="font-size: 11px; color: var(--mute); margin-bottom: 3px">5-hour · 41%</div>
+              <div class="gauge"><i style="width: 41%; background: var(--accent2)"></i></div>
+              <div style="font-size: 11px; color: var(--mute); margin: 6px 0 3px">weekly · 63%</div>
+              <div class="gauge"><i style="width: 63%; background: #ffb35c"></i></div>
+            </div>
+            <div class="card">
+              <div class="t" style="display: flex; justify-content: space-between">
+                🧪 TDD / Review <span class="badge b-ok">current</span>
+              </div>
+              <div class="v">86</div>
+              <div style="font-size: 11px; color: var(--mute)">verdict approve · tests pass</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="feat">
+          <div class="ic">🧠</div>
+          <h3>Live agent telemetry</h3>
+          <p>Context %, token burn, plan usage (5h + weekly), and the agent's current tool call — pinned to one session.</p>
+        </div>
+        <div class="feat">
+          <div class="ic">🧪</div>
+          <h3>TDD at a glance</h3>
+          <p>Latest code-review score and test status, with a ⚠ stale flag the moment HEAD moves ahead of the review.</p>
+        </div>
+        <div class="feat">
+          <div class="ic">🧩</div>
+          <h3>Plugins, your way</h3>
+          <p>No marketplace. Write a React folder, or declare a command widget in JSON — including per-repo widgets loaded from the repo you attach to.</p>
+        </div>
+      </div>
+
+      <h2 id="plugins">A plugin, in full</h2>
+      <div class="snip"><span class="c">// src/renderer/src/plugins/context/index.tsx</span>
+<span class="k">const</span> plugin: Plugin&lt;TranscriptStats&gt; = {
+  id: <span class="s">'context'</span>,
+  title: <span class="s">'Context Window'</span>,
+  icon: <span class="s">'🧠'</span>,
+  intervalMs: <span class="s">2000</span>,
+  defaultEnabled: <span class="k">true</span>,
+  poll: (gt) =&gt; gt.<span class="s">transcript</span>(),        <span class="c">// read live state</span>
+  render: (d) =&gt; (
+    &lt;Card icon=<span class="s">"🧠"</span> title=<span class="s">"Context Window"</span>&gt;
+      &lt;Big value={<span class="s">`${d.contextPct.toFixed(1)}%`</span>} /&gt;
+      &lt;Gauge pct={d.contextPct} /&gt;
+    &lt;/Card&gt;
+  ),
+}
+<span class="k">export default</span> plugin</div>
+
+      <footer>
+        <span>◆ Gauntlet Terminal</span>
+        <a href="https://labs.gauntletai.com/trevormiller/gauntlet-terminal">source</a>
+        <span>·</span>
+        <span>built in one night · macOS · MIT</span>
+      </footer>
+    </div>
+
+    <script>
+      function copyCmd() {
+        navigator.clipboard.writeText(document.getElementById('cmd-text').innerText.trim())
+        const b = document.querySelector('.copy')
+        b.innerText = 'copied ✓'
+        setTimeout(() => (b.innerText = 'copy'), 1500)
+      }
+    </script>
+  </body>
+</html>

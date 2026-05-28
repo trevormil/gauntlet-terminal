@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+
+:root {
+  --gt-bg: #0a0a0f;
+  --gt-panel: #12121a;
+  --gt-border: #232334;
+  --gt-accent: #7c5cff;
+  --gt-accent-2: #00e0c6;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--gt-bg);
+  color: #e7e7ee;
+  font-family:
+    'SF Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, monospace;
+  overflow: hidden;
+}
+
+/* widget mount animation */
+@keyframes gt-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.gt-pop-in {
+  animation: gt-pop-in 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes gt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.gt-pulse {
+  animation: gt-pulse 1.6s ease-in-out infinite;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+  border-radius: 4px;
+}

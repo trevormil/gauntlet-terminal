@@ -1,0 +1,69 @@
+import { useEffect, useRef } from 'react'
+import { Terminal as Xterm } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import type { Choice } from './EntryScreen'
+
+// Hosts the real Claude Code CLI: xterm.js renders, the PTY (main process) runs
+// `claude` attached to the chosen session. Same pattern VS Code's integrated
+// terminal uses.
+export function TerminalPane({
+  choice,
+  onStarted,
+}: {
+  choice: Choice
+  onStarted?: (info: { sessionId: string; cwd: string }) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+
+    const term = new Xterm({
+      fontFamily: "'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace",
+      fontSize: 13,
+      lineHeight: 1.25,
+      cursorBlink: true,
+      allowProposedApi: true,
+      theme: {
+        background: '#0a0a0f',
+        foreground: '#e7e7ee',
+        cursor: '#7c5cff',
+        selectionBackground: '#7c5cff44',
+        black: '#0a0a0f',
+        brightBlack: '#5b5b6e',
+      },
+    })
+    const fit = new FitAddon()
+    term.loadAddon(fit)
+    term.open(el)
+    fit.fit()
+
+    const gt = window.gt
+    // attach listeners BEFORE starting the pty so no early output is missed.
+    const offData = gt.pty.onData((d) => term.write(d))
+    const offExit = gt.pty.onExit(() => term.write('\r\n\x1b[2m── process exited ──\x1b[0m\r\n'))
+    const onInput = term.onData((d) => gt.pty.input(d))
+
+    // spawn `claude` attached to the chosen session, sized to the live terminal
+    gt.startSession({ ...choice, cols: term.cols, rows: term.rows }).then((info) =>
+      onStarted?.(info),
+    )
+
+    const ro = new ResizeObserver(() => {
+      fit.fit()
+      gt.pty.resize({ cols: term.cols, rows: term.rows })
+    })
+    ro.observe(el)
+
+    return () => {
+      offData()
+      offExit()
+      onInput.dispose()
+      ro.disconnect()
+      term.dispose()
+    }
+  }, [])
+
+  return <div ref={ref} className="h-full w-full px-2 py-1" />
+}
