@@ -16,11 +16,14 @@ import { CodeEditor } from '../../components/CodeEditor'
 import { fileIcon } from '../../lib/fileIcons'
 import type { Tab, TabContext, FileEntry, SearchHit } from '../../lib/types'
 
+// Values must be valid @uiw/codemirror-extensions-langs keys — which are the
+// SHORT names (ts/js/py/rs/sh/rb), not the long ones. Mapping to a missing key
+// returns undefined → no parser → no syntax highlighting (the bug this fixes).
 const EXT: Record<string, string> = {
-  ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx', mjs: 'javascript', cjs: 'javascript',
-  json: 'json', md: 'markdown', mdx: 'markdown', css: 'css', scss: 'sass', less: 'less', html: 'html',
-  py: 'python', rs: 'rust', go: 'go', yaml: 'yaml', yml: 'yaml', sql: 'sql', sh: 'shell', bash: 'shell',
-  zsh: 'shell', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', php: 'php', rb: 'ruby', toml: 'toml', xml: 'xml',
+  ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+  json: 'json', md: 'markdown', mdx: 'markdown', css: 'css', scss: 'scss', less: 'less', html: 'html',
+  py: 'py', rs: 'rs', go: 'go', yaml: 'yaml', yml: 'yaml', sql: 'sql', sh: 'sh', bash: 'sh',
+  zsh: 'sh', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java', php: 'php', rb: 'rb', toml: 'toml', xml: 'xml',
 }
 function langFor(path: string): Extension[] {
   const key = EXT[path.split('.').pop()?.toLowerCase() || ''] as keyof typeof langs | undefined
