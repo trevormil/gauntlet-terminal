@@ -197,6 +197,8 @@ export type GtApi = {
     name: string,
     parentDir?: string,
   ) => Promise<{ ok: boolean; path?: string; error?: string }>
+  isFullscreen: () => Promise<boolean>
+  onFullscreen: (cb: (v: boolean) => void) => () => void
   pty: {
     input: (key: string, data: string) => void
     resize: (key: string, size: { cols: number; rows: number }) => void

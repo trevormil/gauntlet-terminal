@@ -20,6 +20,12 @@ const gt = {
   gauntletDirs: () => ipcRenderer.invoke('dirs:gauntlet'),
   scaffoldProject: (name: string, parentDir?: string) =>
     ipcRenderer.invoke('project:scaffold', name, parentDir),
+  isFullscreen: (): Promise<boolean> => ipcRenderer.invoke('window:is-fullscreen'),
+  onFullscreen: (cb: (v: boolean) => void) => {
+    const h = (_e: unknown, v: boolean) => cb(v)
+    ipcRenderer.on('window:fullscreen', h)
+    return () => ipcRenderer.removeListener('window:fullscreen', h)
+  },
 
   // terminal io, routed by session key (the pty is spawned by startSession)
   pty: {

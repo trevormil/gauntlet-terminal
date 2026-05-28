@@ -20,6 +20,13 @@ export default function App() {
   const [sessions, setSessions] = useState<Sess[]>([])
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [adding, setAdding] = useState(true)
+  const [fullscreen, setFullscreen] = useState(false)
+
+  // macOS hides the traffic lights in fullscreen — drop the 78px reserve for them
+  useEffect(() => {
+    window.gt.isFullscreen().then(setFullscreen)
+    return window.gt.onFullscreen(setFullscreen)
+  }, [])
 
   // tell main which session is active (data IPC reads it)
   useEffect(() => {
@@ -51,7 +58,9 @@ export default function App() {
       {/* session tab bar (top-level, also the window drag region) */}
       <header
         style={drag}
-        className="flex h-9 shrink-0 items-center border-b border-[var(--gt-border)] bg-[var(--gt-bg)] pl-[78px] pr-2"
+        className={`flex h-9 shrink-0 items-center border-b border-[var(--gt-border)] bg-[var(--gt-bg)] pr-2 ${
+          fullscreen ? 'pl-3' : 'pl-[78px]'
+        }`}
       >
         {/* brand mark — overflow-clip + scale crops the logo PNG's baked-in
             padding so the glyph fills the box instead of floating */}

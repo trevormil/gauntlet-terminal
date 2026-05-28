@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { app } from 'electron'
 
@@ -34,10 +34,12 @@ function templateSource(): { dir: string; cleanup?: () => void } {
 /** Create <parentDir>/<name> from the template: copy → git init → first commit. */
 export function scaffoldProject(name: string, parentDir?: string): ScaffoldResult {
   const safe = name.trim().replace(/[^\w.-]/g, '-').replace(/^-+|-+$/g, '')
-  if (!safe) return { ok: false, error: 'enter a project name' }
+  if (!safe || /^\.+$/.test(safe)) return { ok: false, error: 'enter a project name' }
   const parent = parentDir?.trim() || join(homedir(), 'CompSci', 'gauntlet')
   const dest = join(parent, safe)
-  if (existsSync(dest)) return { ok: false, error: `${dest} already exists` }
+  // never traverse out of / clobber: dest must be a brand-new direct child of parent
+  if (resolve(dirname(dest)) !== resolve(parent)) return { ok: false, error: 'invalid name' }
+  if (existsSync(dest)) return { ok: false, error: `“${safe}” already exists in that folder — pick a new name` }
 
   let src: { dir: string; cleanup?: () => void }
   try {

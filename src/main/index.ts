@@ -153,7 +153,15 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, '../preload/index.mjs'), sandbox: false },
   })
 
-  win.on('ready-to-show', () => win?.show())
+  // The macOS traffic lights are hidden in fullscreen, so the renderer should
+  // drop its left reserve for them. Broadcast the fullscreen state.
+  const sendFullscreen = () => send('window:fullscreen', win?.isFullScreen() ?? false)
+  win.on('enter-full-screen', sendFullscreen)
+  win.on('leave-full-screen', sendFullscreen)
+  win.on('ready-to-show', () => {
+    win?.show()
+    sendFullscreen()
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -202,6 +210,7 @@ ipcMain.handle('dialog:pickDir', async () => {
 ipcMain.handle('project:scaffold', (_e, name: string, parentDir?: string) =>
   scaffoldProject(name, parentDir),
 )
+ipcMain.handle('window:is-fullscreen', () => win?.isFullScreen() ?? false)
 
 // ---- PTY IPC (routed by session key) ----
 ipcMain.on('pty:input', (_e, key: string, data: string) => sessions.get(key)?.pty.write(data))
