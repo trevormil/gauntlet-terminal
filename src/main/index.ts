@@ -12,6 +12,7 @@ import {
   readSessionTasks,
   lastAssistantTurn,
 } from './data'
+import { fixPath } from './env'
 import { emitActivity, readActivity, clearActivity, onActivity, startActivityTail } from './events'
 import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
@@ -526,6 +527,7 @@ ipcMain.handle('files:delete', (_e, rel: string) => removeEntry(filesRoot(), rel
 process.on('uncaughtException', (e) => console.error('[gt] uncaught:', e))
 
 app.whenReady().then(() => {
+  fixPath() // packaged app has a minimal PATH — recover brew CLIs (glab/gh/…)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
