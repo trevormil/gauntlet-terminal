@@ -63,11 +63,16 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
   const [mrs, setMrs] = useState<Mr[] | null>(null)
   const [selectedMrIid, setSelectedMrIid] = useState<number | null>(null)
 
+  const hasRemote = !!ctx.repoPath
   useEffect(() => {
     setMrs(null)
     setSelectedMrIid(null)
+    if (!hasRemote) {
+      setMrs([]) // no forge remote → nothing to fetch (e.g. a local-only repo)
+      return
+    }
     window.gt.listMrs().then(setMrs)
-  }, [ctx.sessionId])
+  }, [ctx.sessionId, ctx.repoPath]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (selectedMrIid !== null)
     return (
@@ -83,12 +88,19 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
         <GitPullRequest size={14} strokeWidth={2} className="text-zinc-400" />
         <span className="text-[12px] font-semibold text-zinc-200">
-          Merge Requests{mrs ? ` (${mrs.filter((m) => m.state === 'opened').length})` : ''}
+          Merge Requests{hasRemote && mrs ? ` (${mrs.filter((m) => m.state === 'opened').length})` : ''}
         </span>
         <span className="text-[11px] text-zinc-600">{ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <MrList mrs={mrs} onOpen={setSelectedMrIid} />
+        {!hasRemote ? (
+          <div className="p-6 text-[12px] leading-relaxed text-zinc-600">
+            This repo has no forge remote — MRs come from a GitLab/GitHub{' '}
+            <span className="font-mono">origin</span>. Local-only repos (like this one) have none.
+          </div>
+        ) : (
+          <MrList mrs={mrs} onOpen={setSelectedMrIid} />
+        )}
       </div>
     </div>
   )
@@ -99,8 +111,9 @@ const tab: Tab = {
   title: 'MRs',
   icon: GitPullRequest,
   order: 1.2,
-  // MRs come from the forge (glab) — needs an origin remote (repoPath).
-  appliesTo: (ctx) => !!ctx.repoPath,
+  // Always available for a git repo; shows a "no forge remote" state when the
+  // repo is local-only (glab needs an origin remote to list MRs).
+  appliesTo: (ctx) => !!ctx.repoRoot,
   Component: MrsTab,
 }
 export default tab
