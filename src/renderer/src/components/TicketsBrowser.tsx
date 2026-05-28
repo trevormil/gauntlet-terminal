@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Plus, Hand, ArrowUpRight } from 'lucide-react'
+import { Plus, Hand, ArrowUpRight, ChevronRight, ChevronDown } from 'lucide-react'
 import { Badge, badgeClasses } from './ui'
 import { Markdown } from './Markdown'
 import { statusTone, priorityTone, typeTone, horizonTone } from '../lib/badges'
@@ -10,6 +10,10 @@ const STATUSES = ['open', 'in-progress', 'closed', 'stuck', 'icebox']
 const TYPES = ['feature', 'bug', 'security', 'docs', 'dx', 'testing', 'ux', 'performance']
 const PRIORITIES = ['critical', 'high', 'medium', 'low']
 const HORIZONS = ['now', 'next', 'future']
+// Tickets are grouped by status (active work up top); closed/icebox start
+// collapsed so you don't wade through finished tickets by default.
+const STATUS_GROUPS = ['open', 'in-progress', 'stuck', 'closed', 'icebox']
+const COLLAPSED_BY_DEFAULT = ['closed', 'icebox']
 
 function FieldSelect({
   value,
@@ -131,11 +135,11 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
   const [tickets, setTickets] = useState<Ticket[] | null>(null)
   const [sel, setSel] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [fStatus, setFStatus] = useState('all')
   const [fType, setFType] = useState('all')
   const [fHorizon, setFHorizon] = useState('all')
   const [fHitl, setFHitl] = useState(false)
   const [q, setQ] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(COLLAPSED_BY_DEFAULT))
 
   const loadTickets = () => window.gt.tickets.list().then(setTickets)
   useEffect(() => {
@@ -144,7 +148,6 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
 
   const filtered = (tickets || []).filter((t) => {
     if (hitlOnly && !t.hitl) return false
-    if (fStatus !== 'all' && t.status !== fStatus) return false
     if (!hitlOnly) {
       if (fType !== 'all' && t.type !== fType) return false
       if (fHorizon !== 'all' && t.horizon !== fHorizon) return false
@@ -155,21 +158,25 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
   })
   const selected = tickets?.find((t) => t.slug === sel) || null
 
+  // group filtered tickets by status, active statuses first
+  const rank = (s: string) => (STATUS_GROUPS.indexOf(s) < 0 ? 99 : STATUS_GROUPS.indexOf(s))
+  const groups = [...new Set(filtered.map((t) => t.status))]
+    .sort((a, b) => rank(a) - rank(b))
+    .map((status) => ({ status, items: filtered.filter((t) => t.status === status) }))
+  const toggleGroup = (s: string) =>
+    setCollapsed((c) => {
+      const n = new Set(c)
+      n.has(s) ? n.delete(s) : n.add(s)
+      return n
+    })
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* toolbar: filter chips (left) + search / New (right) */}
+      {/* toolbar: type/horizon filters (left) + search / New (right). Status is
+          the grouping axis now, so no status chips here. */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--gt-border)] px-4 py-2">
-        <Chip active={fStatus === 'all'} onClick={() => setFStatus('all')}>
-          all
-        </Chip>
-        {STATUSES.map((s) => (
-          <Chip key={s} active={fStatus === s} onClick={() => setFStatus(s)}>
-            {s}
-          </Chip>
-        ))}
         {!hitlOnly && (
           <>
-            <span className="mx-1 text-zinc-700">·</span>
             <Chip active={fType === 'all'} onClick={() => setFType('all')}>
               any type
             </Chip>
@@ -223,29 +230,50 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
               {hitlOnly ? 'Nothing waiting on you.' : 'No tickets match.'}
             </div>
           ) : (
-            filtered.map((t) => (
-              <button
-                key={t.slug}
-                onClick={() => {
-                  setSel(t.slug)
-                  setCreating(false)
-                }}
-                className={`flex w-full items-center gap-2 border-b border-[var(--gt-border)]/60 px-4 py-2.5 text-left hover:bg-white/5 ${
-                  sel === t.slug ? 'bg-white/5' : ''
-                }`}
-              >
-                <span className="font-mono text-[11px] text-zinc-600">#{t.id}</span>
-                <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{t.title}</span>
-                {t.hitl && !hitlOnly && (
-                  <Badge tone="red">
-                    <Hand size={10} strokeWidth={2.25} />
-                  </Badge>
-                )}
-                {t.horizon !== 'now' && <Badge tone={horizonTone(t.horizon)}>{t.horizon}</Badge>}
-                {t.priority !== 'medium' && <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>}
-                <Badge tone={statusTone(t.status)}>{t.status}</Badge>
-              </button>
-            ))
+            groups.map(({ status, items }) => {
+              const isOpen = !collapsed.has(status)
+              return (
+                <div key={status}>
+                  <button
+                    onClick={() => toggleGroup(status)}
+                    className="sticky top-0 z-10 flex w-full items-center gap-1.5 border-b border-[var(--gt-border)]/60 bg-[var(--gt-bg)] px-3 py-1.5 text-left hover:bg-white/5"
+                  >
+                    {isOpen ? (
+                      <ChevronDown size={12} strokeWidth={2} className="text-zinc-500" />
+                    ) : (
+                      <ChevronRight size={12} strokeWidth={2} className="text-zinc-500" />
+                    )}
+                    <Badge tone={statusTone(status)}>{status}</Badge>
+                    <span className="text-[11px] tabular-nums text-zinc-600">{items.length}</span>
+                  </button>
+                  {isOpen &&
+                    items.map((t) => (
+                      <button
+                        key={t.slug}
+                        onClick={() => {
+                          setSel(t.slug)
+                          setCreating(false)
+                        }}
+                        className={`flex w-full items-center gap-2 border-b border-[var(--gt-border)]/40 py-2.5 pl-7 pr-4 text-left hover:bg-white/5 ${
+                          sel === t.slug ? 'bg-white/5' : ''
+                        }`}
+                      >
+                        <span className="font-mono text-[11px] text-zinc-600">#{t.id}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{t.title}</span>
+                        {t.hitl && !hitlOnly && (
+                          <Badge tone="red">
+                            <Hand size={10} strokeWidth={2.25} />
+                          </Badge>
+                        )}
+                        {t.horizon !== 'now' && <Badge tone={horizonTone(t.horizon)}>{t.horizon}</Badge>}
+                        {t.priority !== 'medium' && (
+                          <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              )
+            })
           )}
         </div>
         <div className="min-w-0 flex-1 overflow-y-auto">
