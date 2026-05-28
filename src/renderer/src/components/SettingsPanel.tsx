@@ -223,8 +223,8 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
             </div>
             {env && (
               <div className="mt-3 space-y-1">
-                <Readiness ok={env.gh.found && env.gh.authed} name="gh" hint={env.gh.found ? (env.gh.authed ? 'installed + authenticated' : 'installed — run `gh auth login`') : 'not installed — `brew install gh`'} />
-                <Readiness ok={env.glab.found && env.glab.authed} name="glab" hint={env.glab.found ? (env.glab.authed ? 'installed + authenticated' : 'installed — run `glab auth login`') : 'not installed — `brew install glab`'} />
+                <Readiness ok={env.gh.found && env.gh.authed} name="gh" hint={env.gh.found ? (env.gh.authed ? `authenticated${env.gh.authHost ? ` (${env.gh.authHost})` : ''}` : 'installed — run `gh auth login`') : 'not installed — `brew install gh`'} />
+                <Readiness ok={env.glab.found && env.glab.authed} name="glab" hint={env.glab.found ? (env.glab.authed ? `authenticated${env.glab.authHost ? ` (${env.glab.authHost})` : ''}` : 'installed — run `glab auth login`') : 'not installed — `brew install glab`'} />
               </div>
             )}
           </Section>

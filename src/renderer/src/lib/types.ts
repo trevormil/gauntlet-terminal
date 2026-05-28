@@ -132,8 +132,8 @@ export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines'>> & {
 export type EnvDetect = {
   codex: { found: boolean; path: string }
   claude: { found: boolean; path: string }
-  gh: { found: boolean; path: string; authed: boolean }
-  glab: { found: boolean; path: string; authed: boolean }
+  gh: { found: boolean; path: string; authed: boolean; authHost: string }
+  glab: { found: boolean; path: string; authed: boolean; authHost: string }
   tgScripts: boolean
 }
 

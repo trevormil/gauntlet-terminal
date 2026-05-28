@@ -62,18 +62,25 @@ function resolveBin(nameOrPath: string): string {
   return which(nameOrPath)
 }
 
-/** `<cli> auth status` exit 0 ⇒ logged in. Best-effort, short timeout. */
-function authOk(cli: string): Promise<boolean> {
+type AuthInfo = { authed: boolean; host: string }
+/** `<cli> auth status` — but glab exits non-zero if ANY configured host is
+ *  unauthed (e.g. an unused gitlab.com entry) even when the self-hosted host you
+ *  actually use IS authed. So treat a "Logged in to <host>" line as success and
+ *  report that host, rather than trusting the exit code. */
+function authProbe(cli: string): Promise<AuthInfo> {
   return new Promise((resolve) => {
-    execFile(cli, ['auth', 'status'], { timeout: 6000 }, (err) => resolve(!err))
+    execFile(cli, ['auth', 'status'], { timeout: 6000 }, (err, stdout, stderr) => {
+      const m = `${stdout || ''}\n${stderr || ''}`.match(/Logged in to (\S+)/i)
+      resolve({ authed: !!m || !err, host: m?.[1] || '' })
+    })
   })
 }
 
 export type EnvDetect = {
   codex: { found: boolean; path: string }
   claude: { found: boolean; path: string }
-  gh: { found: boolean; path: string; authed: boolean }
-  glab: { found: boolean; path: string; authed: boolean }
+  gh: { found: boolean; path: string; authed: boolean; authHost: string }
+  glab: { found: boolean; path: string; authed: boolean; authHost: string }
   tgScripts: boolean
 }
 
@@ -83,15 +90,16 @@ export async function detectEnv(): Promise<EnvDetect> {
   const claude = resolveBin(enginePath('claude'))
   const gh = which('gh')
   const glab = which('glab')
+  const none: AuthInfo = { authed: false, host: '' }
   const [ghAuth, glabAuth] = await Promise.all([
-    gh ? authOk(gh) : Promise.resolve(false),
-    glab ? authOk(glab) : Promise.resolve(false),
+    gh ? authProbe(gh) : Promise.resolve(none),
+    glab ? authProbe(glab) : Promise.resolve(none),
   ])
   return {
     codex: { found: !!codex, path: codex },
     claude: { found: !!claude, path: claude },
-    gh: { found: !!gh, path: gh, authed: ghAuth },
-    glab: { found: !!glab, path: glab, authed: glabAuth },
+    gh: { found: !!gh, path: gh, authed: ghAuth.authed, authHost: ghAuth.host },
+    glab: { found: !!glab, path: glab, authed: glabAuth.authed, authHost: glabAuth.host },
     tgScripts: existsSync(join(homedir(), '.claude', 'bin', 'telegram-notify.sh')),
   }
 }
