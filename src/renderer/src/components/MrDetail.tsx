@@ -1,9 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
 import parseDiff from 'parse-diff'
+import hljs from 'highlight.js/lib/common'
 import { Badge } from './ui'
 import { Markdown } from './Markdown'
 import { stateTone, verdictTone, testTone, sevTone } from '../lib/badges'
 import type { MrDetail, Finding } from '../lib/types'
+
+const HLJS_LANG: Record<string, string> = {
+  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', mjs: 'javascript',
+  cjs: 'javascript', json: 'json', md: 'markdown', css: 'css', scss: 'scss', less: 'less',
+  html: 'xml', xml: 'xml', py: 'python', rs: 'rust', go: 'go', yaml: 'yaml', yml: 'yaml', sql: 'sql',
+  sh: 'bash', bash: 'bash', zsh: 'bash', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', java: 'java',
+  php: 'php', rb: 'ruby', toml: 'ini',
+}
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const langOf = (path: string) => HLJS_LANG[path.split('.').pop()?.toLowerCase() || '']
+const stripPrefix = (s: string) =>
+  s.length && (s[0] === '+' || s[0] === '-' || s[0] === ' ') ? s.slice(1) : s
+function hlHtml(content: string, langId?: string): string {
+  const code = stripPrefix(content)
+  if (!code) return ''
+  try {
+    if (langId && hljs.getLanguage(langId))
+      return hljs.highlight(code, { language: langId, ignoreIllegals: true }).value
+  } catch {
+    /* fall through */
+  }
+  return esc(code)
+}
+function Code({ content, langId }: { content: string; langId?: string }) {
+  return <span dangerouslySetInnerHTML={{ __html: hlHtml(content, langId) }} />
+}
 
 // per-MR "viewed file" set, persisted to localStorage
 function useViewed(scope: string) {
@@ -19,56 +46,106 @@ function useViewed(scope: string) {
     localStorage.setItem(key, JSON.stringify(m))
   }, [key, m])
   const set = (path: string, v: boolean) => setM((o) => ({ ...o, [path]: v }))
-  return [m, set] as const
+  const setAll = (paths: string[], v: boolean) =>
+    setM(() => (v ? Object.fromEntries(paths.map((p) => [p, true])) : {}))
+  return [m, set, setAll] as const
 }
 
-function FileDiff({ file }: { file: any }) {
-  const stripPrefix = (s: string) =>
-    s.length && (s[0] === '+' || s[0] === '-' || s[0] === ' ') ? s.slice(1) : s
+type Side = { ln: number | string; content: string; type: 'normal' | 'add' | 'del' } | undefined
+function alignChunk(changes: any[]): { left: Side; right: Side }[] {
+  const rows: { left: Side; right: Side }[] = []
+  let i = 0
+  while (i < changes.length) {
+    const c = changes[i]
+    if (c.type === 'normal') {
+      rows.push({
+        left: { ln: c.ln1, content: c.content, type: 'normal' },
+        right: { ln: c.ln2, content: c.content, type: 'normal' },
+      })
+      i++
+      continue
+    }
+    const dels: any[] = []
+    const adds: any[] = []
+    while (i < changes.length && changes[i].type === 'del') dels.push(changes[i++])
+    while (i < changes.length && changes[i].type === 'add') adds.push(changes[i++])
+    const n = Math.max(dels.length, adds.length)
+    for (let k = 0; k < n; k++)
+      rows.push({
+        left: dels[k] ? { ln: dels[k].ln, content: dels[k].content, type: 'del' } : undefined,
+        right: adds[k] ? { ln: adds[k].ln, content: adds[k].content, type: 'add' } : undefined,
+      })
+  }
+  return rows
+}
+const sideBg = (s: Side) =>
+  s?.type === 'add'
+    ? 'bg-[var(--gt-green)]/[0.08]'
+    : s?.type === 'del'
+      ? 'bg-[var(--gt-red)]/[0.08]'
+      : ''
+
+function FileDiff({ file, mode }: { file: any; mode: 'unified' | 'split' }) {
+  const langId = langOf(file.to || file.from || '')
   return (
     <div className="font-mono text-[12px]">
       <div className="sticky top-0 z-10 border-b border-[var(--gt-border)] bg-[var(--gt-bg)] px-3 py-2 text-[12px] text-zinc-300">
         <span className="text-zinc-500">{file.from === file.to ? '' : `${file.from} → `}</span>
         <span>{file.to || file.from}</span>
-        <span className="ml-3 text-emerald-400">+{file.additions}</span>{' '}
-        <span className="text-rose-400">-{file.deletions}</span>
+        <span className="ml-3 text-[var(--gt-green)]">+{file.additions}</span>{' '}
+        <span className="text-[var(--gt-red)]">-{file.deletions}</span>
       </div>
       {file.chunks.map((c: any, ci: number) => (
         <div key={ci}>
           <div className="bg-[var(--gt-panel)] px-3 py-1 text-[11px] text-zinc-500">{c.content}</div>
-          <table className="w-full border-collapse">
-            <tbody>
-              {c.changes.map((ch: any, i: number) => {
-                const bg =
-                  ch.type === 'add'
-                    ? 'bg-emerald-500/[0.08]'
-                    : ch.type === 'del'
-                      ? 'bg-rose-500/[0.08]'
-                      : ''
-                const lineColor =
-                  ch.type === 'add'
-                    ? 'text-emerald-200'
-                    : ch.type === 'del'
-                      ? 'text-rose-200'
-                      : 'text-zinc-300'
-                const oldLn = ch.type === 'normal' ? ch.ln1 : ch.type === 'del' ? ch.ln : ''
-                const newLn = ch.type === 'normal' ? ch.ln2 : ch.type === 'add' ? ch.ln : ''
-                const prefix = ch.type === 'add' ? '+' : ch.type === 'del' ? '-' : ' '
-                return (
-                  <tr key={i} className={bg}>
-                    <td className="w-10 select-none px-2 text-right text-[10px] text-zinc-600">
-                      {oldLn || ''}
+          {mode === 'unified' ? (
+            <table className="w-full border-collapse">
+              <tbody>
+                {c.changes.map((ch: any, i: number) => {
+                  const bg =
+                    ch.type === 'add'
+                      ? 'bg-[var(--gt-green)]/[0.08]'
+                      : ch.type === 'del'
+                        ? 'bg-[var(--gt-red)]/[0.08]'
+                        : ''
+                  const oldLn = ch.type === 'normal' ? ch.ln1 : ch.type === 'del' ? ch.ln : ''
+                  const newLn = ch.type === 'normal' ? ch.ln2 : ch.type === 'add' ? ch.ln : ''
+                  const prefix = ch.type === 'add' ? '+' : ch.type === 'del' ? '-' : ' '
+                  return (
+                    <tr key={i} className={bg}>
+                      <td className="w-10 select-none px-2 text-right text-[10px] text-zinc-600">{oldLn || ''}</td>
+                      <td className="w-10 select-none px-2 text-right text-[10px] text-zinc-600">{newLn || ''}</td>
+                      <td className="w-3 select-none text-center text-zinc-600">{prefix}</td>
+                      <td className="whitespace-pre px-2 text-zinc-200">
+                        <Code content={ch.content} langId={langId} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full table-fixed border-collapse">
+              <tbody>
+                {alignChunk(c.changes).map((row, i) => (
+                  <tr key={i}>
+                    <td className={`w-9 select-none px-1 text-right text-[10px] text-zinc-600 ${sideBg(row.left)}`}>
+                      {row.left?.ln || ''}
                     </td>
-                    <td className="w-10 select-none px-2 text-right text-[10px] text-zinc-600">
-                      {newLn || ''}
+                    <td className={`w-1/2 truncate whitespace-pre border-r border-[var(--gt-border)] px-2 text-zinc-200 ${sideBg(row.left)}`}>
+                      {row.left ? <Code content={row.left.content} langId={langId} /> : ''}
                     </td>
-                    <td className="w-3 select-none text-center text-zinc-600">{prefix}</td>
-                    <td className={`whitespace-pre px-2 ${lineColor}`}>{stripPrefix(ch.content)}</td>
+                    <td className={`w-9 select-none px-1 text-right text-[10px] text-zinc-600 ${sideBg(row.right)}`}>
+                      {row.right?.ln || ''}
+                    </td>
+                    <td className={`w-1/2 truncate whitespace-pre px-2 text-zinc-200 ${sideBg(row.right)}`}>
+                      {row.right ? <Code content={row.right.content} langId={langId} /> : ''}
+                    </td>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       ))}
     </div>
@@ -78,13 +155,13 @@ function FileDiff({ file }: { file: any }) {
 function DiffView({ diff, scope }: { diff: string; scope: string }) {
   const files = useMemo(() => parseDiff(diff), [diff])
   const [selected, setSelected] = useState<string>('')
-  const [viewed, setViewed] = useViewed(scope)
+  const [mode, setMode] = useState<'unified' | 'split'>('unified')
+  const [viewed, setViewed, setAll] = useViewed(scope)
   useEffect(() => {
     if (!selected && files[0]) setSelected(files[0].to || files[0].from || '')
   }, [files, selected])
 
-  if (!diff)
-    return <div className="p-6 text-[12px] text-zinc-600">Loading diff…</div>
+  if (!diff) return <div className="p-6 text-[12px] text-zinc-600">Loading diff…</div>
   if (files.length === 0)
     return (
       <div className="p-6 text-[12px] text-zinc-600">
@@ -92,13 +169,23 @@ function DiffView({ diff, scope }: { diff: string; scope: string }) {
       </div>
     )
   const file = files.find((f) => (f.to || f.from || '') === selected) || files[0]
-  const viewedCount = files.filter((f) => viewed[f.to || f.from || '']).length
+  const paths = files.map((f) => f.to || f.from || '')
+  const viewedCount = paths.filter((p) => viewed[p]).length
+  const allViewed = viewedCount === paths.length && paths.length > 0
 
   return (
     <div className="flex h-full min-h-0">
       <div className="w-80 shrink-0 overflow-y-auto border-r border-[var(--gt-border)]">
-        <div className="border-b border-[var(--gt-border)] px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-600">
-          {files.length} files · {viewedCount} viewed
+        <div className="flex items-center justify-between border-b border-[var(--gt-border)] px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-600">
+          <span>
+            {files.length} files · {viewedCount} viewed
+          </span>
+          <button
+            onClick={() => setAll(paths, !allViewed)}
+            className="rounded px-1.5 py-0.5 text-[10px] normal-case text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+          >
+            {allViewed ? 'clear' : 'mark all'}
+          </button>
         </div>
         {files.map((f) => {
           const path = f.to || f.from || ''
@@ -125,14 +212,30 @@ function DiffView({ diff, scope }: { diff: string; scope: string }) {
               >
                 {path}
               </span>
-              <span className="text-emerald-400">+{f.additions}</span>
-              <span className="text-rose-400">-{f.deletions}</span>
+              <span className="text-[var(--gt-green)]">+{f.additions}</span>
+              <span className="text-[var(--gt-red)]">-{f.deletions}</span>
             </div>
           )
         })}
       </div>
-      <div className="min-w-0 flex-1 overflow-auto">
-        <FileDiff file={file} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-1 border-b border-[var(--gt-border)] px-3 py-1">
+          <button
+            onClick={() => setMode('unified')}
+            className={`rounded px-2 py-0.5 text-[11px] ${mode === 'unified' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-200'}`}
+          >
+            Unified
+          </button>
+          <button
+            onClick={() => setMode('split')}
+            className={`rounded px-2 py-0.5 text-[11px] ${mode === 'split' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-200'}`}
+          >
+            Split
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <FileDiff file={file} mode={mode} />
+        </div>
       </div>
     </div>
   )
