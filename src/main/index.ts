@@ -2,8 +2,9 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { statSync } from 'node:fs'
 import * as pty from 'node-pty'
-import { readTranscriptStats, readHarnessTdd, listSessions } from './data'
+import { readTranscriptStats, readHarnessTdd, listSessions, findSessionFile } from './data'
 import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
 
@@ -44,6 +45,7 @@ function startSession(opts: StartOpts) {
   }
 
   pinned = { sessionId, cwd, mode: opts.mode, name: opts.name || '' }
+  watchSession()
 
   const cmd = [CLAUDE, ...args].map(shq).join(' ')
   ptyProc = pty.spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
@@ -57,6 +59,35 @@ function startSession(opts: StartOpts) {
   ptyProc.onExit(({ exitCode }) => win?.webContents.send('pty:exit', exitCode))
 
   return { sessionId, cwd }
+}
+
+// Watch the attached session's transcript and push a tick the instant it grows
+// (i.e. as the agent writes each turn / tool call) so realtime widgets refresh
+// without waiting for their poll interval. A cheap stat — no Claude hook needed.
+let watchTimer: ReturnType<typeof setInterval> | null = null
+let watchedFile = ''
+let lastMtime = 0
+function watchSession() {
+  if (watchTimer) clearInterval(watchTimer)
+  watchedFile = ''
+  lastMtime = 0
+  watchTimer = setInterval(() => {
+    if (!pinned.sessionId) return
+    if (!watchedFile) {
+      const f = findSessionFile(pinned.sessionId)
+      if (!f) return
+      watchedFile = f
+    }
+    try {
+      const m = statSync(watchedFile).mtimeMs
+      if (m !== lastMtime) {
+        lastMtime = m
+        win?.webContents.send('gt:tick')
+      }
+    } catch {
+      watchedFile = ''
+    }
+  }, 400)
 }
 
 function createWindow() {
@@ -108,7 +139,7 @@ ipcMain.on('pty:resize', (_e, size: { cols: number; rows: number }) => {
 
 // ---- data IPC (plugin pollers; all keyed to the attached session) ----
 ipcMain.handle('data:transcript', () => readTranscriptStats(pinned.sessionId))
-ipcMain.handle('data:harness-tdd', () => readHarnessTdd())
+ipcMain.handle('data:harness-tdd', () => readHarnessTdd(pinned.cwd))
 ipcMain.handle('data:usage', () => readUsage())
 ipcMain.handle('data:meta', () => ({ ...pinned, claude: CLAUDE }))
 

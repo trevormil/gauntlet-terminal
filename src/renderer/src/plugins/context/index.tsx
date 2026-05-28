@@ -8,7 +8,8 @@ const plugin: Plugin<TranscriptStats> = {
   icon: '🧠',
   blurb: "Live % of the model's context window used on the current turn.",
   order: 1,
-  intervalMs: 1000,
+  intervalMs: 3000,
+  realtime: true,
   defaultEnabled: true,
   poll: (gt) => gt.transcript(),
   render: (d) => {

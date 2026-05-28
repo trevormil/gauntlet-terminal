@@ -19,7 +19,7 @@ const plugin: Plugin<TddInfo> = {
     if (!d?.ok)
       return (
         <Card icon="🧪" title="TDD / Review">
-          <Empty>No harness artifacts found</Empty>
+          <Empty>{d?.repo ? `No tracked review · ${d.repo}` : 'Not a tracked repo'}</Empty>
         </Card>
       )
     return (

@@ -41,6 +41,13 @@ const gt = {
   // command widgets (declarative / per-repo)
   listCommandWidgets: () => ipcRenderer.invoke('widgets:list'),
   runCommand: (command: string) => ipcRenderer.invoke('widgets:run', command),
+
+  // fires the instant the attached session's transcript changes
+  onTick: (cb: () => void) => {
+    const h = () => cb()
+    ipcRenderer.on('gt:tick', h)
+    return () => ipcRenderer.removeListener('gt:tick', h)
+  },
 }
 
 contextBridge.exposeInMainWorld('gt', gt)

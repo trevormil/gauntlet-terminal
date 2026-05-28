@@ -101,6 +101,7 @@ export type GtApi = {
   meta: () => Promise<SessionInfo>
   listCommandWidgets: () => Promise<CommandWidget[]>
   runCommand: (command: string) => Promise<CommandResult>
+  onTick: (cb: () => void) => () => void
 }
 
 declare global {
@@ -122,6 +123,8 @@ export type Plugin<T = unknown> = {
   order?: number
   intervalMs: number
   defaultEnabled: boolean
+  /** Re-poll immediately when the attached session's transcript changes (not just on interval). */
+  realtime?: boolean
   /** Called on an interval. `prev` is the previous poll result (for rate/delta widgets). */
   poll: (gt: GtApi, prev: T | null) => Promise<T>
   render: (data: T | null) => ReactNode

@@ -7,7 +7,8 @@ const plugin: Plugin<TranscriptStats> = {
   icon: '🤖',
   blurb: 'Which model the active session is running, plus turn count.',
   order: 6,
-  intervalMs: 3000,
+  intervalMs: 4000,
+  realtime: true,
   defaultEnabled: false,
   poll: (gt) => gt.transcript(),
   render: (d) => {

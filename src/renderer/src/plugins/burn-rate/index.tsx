@@ -11,6 +11,7 @@ const plugin: Plugin<Burn> = {
   blurb: 'Live tokens/min, computed from the delta between polls.',
   order: 5,
   intervalMs: 2000,
+  realtime: true,
   defaultEnabled: false,
   poll: async (gt, prev) => {
     const t = await gt.transcript()

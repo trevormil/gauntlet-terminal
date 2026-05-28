@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -290,55 +291,76 @@ function fmField(md: string, key: string): string | null {
   return m ? m[1].trim() : null
 }
 
-let tddCache: { ts: number; info: TddInfo } | null = null
-export function readHarnessTdd(): TddInfo {
-  if (tddCache && Date.now() - tddCache.ts < 2000) return tddCache.info
-  const info = computeHarnessTdd()
-  tddCache = { ts: Date.now(), info }
+function parseRemote(url: string): { host: string; path: string } | null {
+  const u = url.trim().replace(/\.git$/, '')
+  let m = u.match(/^https?:\/\/(?:[^@/]+@)?([^/]+)\/(.+)$/)
+  if (m) return { host: m[1], path: m[2] }
+  m = u.match(/^(?:ssh:\/\/)?[\w.-]+@([^:/]+)[:/](.+)$/) // scp-like or ssh://
+  if (m) return { host: m[1], path: m[2] }
+  return null
+}
+
+function repoForCwd(cwd: string): { host: string; path: string } | null {
+  if (!cwd) return null
+  try {
+    const url = execFileSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return parseRemote(url)
+  } catch {
+    return null
+  }
+}
+
+let tddCache: { cwd: string; ts: number; info: TddInfo } | null = null
+export function readHarnessTdd(cwd: string): TddInfo {
+  if (tddCache && tddCache.cwd === cwd && Date.now() - tddCache.ts < 2000) return tddCache.info
+  const info = computeHarnessTdd(cwd)
+  tddCache = { cwd, ts: Date.now(), info }
   return info
 }
 
-function computeHarnessTdd(): TddInfo {
+// Scoped to the attached session's repo: derive owner/repo from the cwd's git
+// remote, then read that repo's newest tracked PR under prs/<host>/<owner>/<repo>/.
+function computeHarnessTdd(cwd: string): TddInfo {
+  const repo = repoForCwd(cwd)
   const empty: TddInfo = {
     ok: false,
-    repo: '',
+    repo: repo?.path || '',
     number: 0,
     overall: null,
-    verdict: 'unknown',
-    testStatus: 'unknown',
+    verdict: 'none',
+    testStatus: 'none',
     stale: false,
     commitsBehind: 0,
     ts: Date.now(),
   }
-  const prsDir = join(HARNESS, 'prs')
-  if (!existsSync(prsDir)) return empty
+  if (!repo) return empty
+
+  const repoDir = join(HARNESS, 'prs', repo.host, ...repo.path.split('/'))
+  if (!existsSync(repoDir)) return empty
 
   let best: { dir: string; mtime: number } | null = null
-  const walk = (dir: string, depth: number) => {
-    let entries: string[]
+  let nums: string[]
+  try {
+    nums = readdirSync(repoDir)
+  } catch {
+    return empty
+  }
+  for (const n of nums) {
+    const meta = join(repoDir, n, 'meta.json')
     try {
-      entries = readdirSync(dir)
-    } catch {
-      return
-    }
-    if (entries.includes('meta.json')) {
-      const m = statSync(join(dir, 'meta.json')).mtimeMs
-      if (!best || m > best.mtime) best = { dir, mtime: m }
-      return
-    }
-    if (depth > 6) return
-    for (const e of entries) {
-      const p = join(dir, e)
-      try {
-        if (statSync(p).isDirectory()) walk(p, depth + 1)
-      } catch {
-        /* skip */
+      if (existsSync(meta)) {
+        const m = statSync(meta).mtimeMs
+        if (!best || m > best.mtime) best = { dir: join(repoDir, n), mtime: m }
       }
+    } catch {
+      /* skip */
     }
   }
-  walk(prsDir, 0)
   if (!best) return empty
-  const bestDir = (best as { dir: string }).dir
+  const bestDir = best.dir
 
   let meta: any
   try {
@@ -377,7 +399,7 @@ function computeHarnessTdd(): TddInfo {
 
   return {
     ok: true,
-    repo: meta.repo || bestDir.split('/').slice(-2, -1)[0] || '',
+    repo: meta.repo || repo.path,
     number: Number(meta.number) || 0,
     overall,
     verdict,

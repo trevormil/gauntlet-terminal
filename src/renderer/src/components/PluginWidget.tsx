@@ -28,9 +28,12 @@ export function PluginWidget({
     }
     tick()
     const id = setInterval(tick, plugin.intervalMs)
+    // realtime widgets also refresh the instant the transcript changes
+    const offTick = plugin.realtime ? window.gt.onTick(tick) : undefined
     return () => {
       alive = false
       clearInterval(id)
+      offTick?.()
     }
   }, [plugin])
 
