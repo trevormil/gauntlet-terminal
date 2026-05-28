@@ -3,10 +3,19 @@ import { GitPullRequest, TriangleAlert, GitBranch, ArrowUpRight } from 'lucide-r
 import { Badge } from '../../components/ui'
 import { MrDetailView } from '../../components/MrDetail'
 import { PrAgentActions } from '../../components/PrAgentActions'
+import { MrMergeButton } from '../../components/MrMergeButton'
 import { verdictTone, testTone, stateTone } from '../../lib/badges'
 import type { Tab, Mr, TabContext } from '../../lib/types'
 
-function MrList({ mrs, onOpen }: { mrs: Mr[] | null; onOpen: (iid: number) => void }) {
+function MrList({
+  mrs,
+  onOpen,
+  onMerged,
+}: {
+  mrs: Mr[] | null
+  onOpen: (iid: number) => void
+  onMerged: () => void
+}) {
   if (mrs === null) return <div className="p-6 text-[12px] text-zinc-600">Loading MRs from glab…</div>
   if (mrs.length === 0)
     return <div className="p-6 text-[12px] text-zinc-600">No open MRs (or glab not authenticated for this repo).</div>
@@ -45,6 +54,7 @@ function MrList({ mrs, onOpen }: { mrs: Mr[] | null; onOpen: (iid: number) => vo
             </div>
             <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
               <PrAgentActions pr={m} />
+              {m.state === 'opened' && <MrMergeButton iid={m.iid} onMerged={onMerged} />}
               <button
                 onClick={() => window.gt.openExternal(m.webUrl)}
                 className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
@@ -65,6 +75,7 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
   const [selectedMrIid, setSelectedMrIid] = useState<number | null>(null)
 
   const hasRemote = !!ctx.repoPath
+  const refresh = () => window.gt.listMrs().then(setMrs)
   useEffect(() => {
     setMrs(null)
     setSelectedMrIid(null)
@@ -72,7 +83,7 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
       setMrs([]) // no forge remote → nothing to fetch (e.g. a local-only repo)
       return
     }
-    window.gt.listMrs().then(setMrs)
+    refresh()
   }, [ctx.sessionId, ctx.repoPath]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (selectedMrIid !== null)
@@ -81,6 +92,10 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
         iid={selectedMrIid}
         repoLabel={ctx.repoPath || 'repo'}
         onBack={() => setSelectedMrIid(null)}
+        onMerged={() => {
+          setSelectedMrIid(null)
+          refresh()
+        }}
       />
     )
 
@@ -100,7 +115,7 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
             <span className="font-mono">origin</span>. Local-only repos (like this one) have none.
           </div>
         ) : (
-          <MrList mrs={mrs} onOpen={setSelectedMrIid} />
+          <MrList mrs={mrs} onOpen={setSelectedMrIid} onMerged={refresh} />
         )}
       </div>
     </div>

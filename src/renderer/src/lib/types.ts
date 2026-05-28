@@ -204,6 +204,9 @@ export type Mr = {
   review: Review | null
 }
 
+export type CiJob = { id: number; name: string; stage: string; status: string; webUrl: string }
+export type CiInfo = { status: string; webUrl: string; jobs: CiJob[] }
+
 export type TabContext = {
   cwd: string
   sessionId: string
@@ -367,6 +370,8 @@ export type GtApi = {
   listMrs: () => Promise<Mr[]>
   getMr: (iid: number) => Promise<MrDetail | null>
   getMrDiff: (iid: number) => Promise<string>
+  getMrCi: (iid: number) => Promise<CiInfo | null>
+  mergeMr: (iid: number) => Promise<{ ok: boolean; error?: string }>
   openExternal: (url: string) => Promise<void>
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>

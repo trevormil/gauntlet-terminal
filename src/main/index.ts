@@ -17,7 +17,7 @@ import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
 import { repoRootOf, repoForCwd, gitStatus } from './repo'
 import { listTickets, getTicket, createTicket, updateTicket, type NewTicket } from './backlog'
-import { listMrs, getMr, getMrDiff, mrSummary } from './mrs'
+import { listMrs, getMr, getMrDiff, getMrCi, mergeMr, mrSummary } from './mrs'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
@@ -497,6 +497,8 @@ ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; pr
 ipcMain.handle('mrs:list', () => listMrs(repoRootOf(cur().cwd)))
 ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(cur().cwd), iid))
 ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(cur().cwd), iid))
+ipcMain.handle('mrs:ci', (_e, iid: number) => getMrCi(repoRootOf(cur().cwd), iid))
+ipcMain.handle('mrs:merge', (_e, iid: number) => mergeMr(repoRootOf(cur().cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
 ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
 ipcMain.handle('clipboard:read', () => clipboard.readText())

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { repoForCwd } from './repo'
+import { emitActivity } from './events'
 import {
   resolveReviewDir,
   reviewForPrDir,
@@ -92,16 +93,18 @@ export function listMrs(repoRoot: string): Promise<Mr[]> {
 }
 
 export type MrSummary = { open: number; approve: number; changes: number; needsReview: number }
-let summaryCache: { ts: number; root: string; mrs: Mr[] } | null = null
 // Cached (60s) MR counts for the cockpit widget — glab is slow to call per poll.
+// Keyed per-repo so several sessions on different repos don't evict each other.
+const summaryCache = new Map<string, { ts: number; mrs: Mr[] }>()
 export async function mrSummary(repoRoot: string): Promise<MrSummary> {
   const now = Date.now()
   let mrs: Mr[]
-  if (summaryCache && summaryCache.root === repoRoot && now - summaryCache.ts < 60_000) {
-    mrs = summaryCache.mrs
+  const hit = summaryCache.get(repoRoot)
+  if (hit && now - hit.ts < 60_000) {
+    mrs = hit.mrs
   } else {
     mrs = await listMrs(repoRoot)
-    summaryCache = { ts: now, root: repoRoot, mrs }
+    summaryCache.set(repoRoot, { ts: now, mrs })
   }
   const opened = mrs.filter((m) => m.state === 'opened')
   const approve = opened.filter((m) => m.review?.verdict === 'approve').length
@@ -168,6 +171,73 @@ export function getMr(repoRoot: string, iid: number): Promise<MrDetail | null> {
       },
     )
   })
+}
+
+// Merge an MR via glab. Human-initiated only (a button the user clicks) — this
+// is the human satisfying the merge gate, not an agent auto-merging. Uses the
+// project's default merge method; surfaces glab's error (e.g. pipeline must
+// pass, conflicts, approvals) verbatim.
+export function mergeMr(repoRoot: string, iid: number): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    execFile(
+      'glab',
+      ['mr', 'merge', String(iid), '--yes'],
+      { cwd: repoRoot, timeout: 60_000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' },
+      (err, _stdout, stderr) => {
+        if (err) return resolve({ ok: false, error: (stderr || err.message || 'merge failed').trim() })
+        const label = repoForCwd(repoRoot)?.path || repoRoot.split('/').pop() || ''
+        emitActivity(
+          { kind: 'pr-verdict', title: `Merged MR !${iid}`, detail: label, repo: label, repoRoot },
+          { notify: true },
+        )
+        resolve({ ok: true })
+      },
+    )
+  })
+}
+
+export type CiJob = { id: number; name: string; stage: string; status: string; webUrl: string }
+export type CiInfo = { status: string; webUrl: string; jobs: CiJob[] }
+
+// The forge's own CI pipeline for an MR's head — the actual lint/test/build/
+// deploy jobs, separate from the harness review verdict. Two glab-api calls:
+// the MR's head_pipeline, then that pipeline's jobs. Lazy-loaded (CI is slow).
+export function getMrCi(repoRoot: string, iid: number): Promise<CiInfo | null> {
+  const repo = repoForCwd(repoRoot)
+  if (!repo) return Promise.resolve(null)
+  const proj = encodeURIComponent(repo.path)
+  const api = <T>(path: string) =>
+    new Promise<T | null>((resolve) => {
+      execFile(
+        'glab',
+        ['api', path],
+        { cwd: repoRoot, timeout: 12_000, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8' },
+        (err, stdout) => {
+          if (err || !stdout) return resolve(null)
+          try {
+            resolve(JSON.parse(stdout) as T)
+          } catch {
+            resolve(null)
+          }
+        },
+      )
+    })
+  return (async () => {
+    const mr = await api<{ head_pipeline?: any; pipeline?: any }>(`projects/${proj}/merge_requests/${iid}`)
+    const pl = mr?.head_pipeline || mr?.pipeline
+    if (!pl?.id) return null
+    const jobsRaw = await api<any[]>(`projects/${proj}/pipelines/${pl.id}/jobs?per_page=100`)
+    const jobs: CiJob[] = Array.isArray(jobsRaw)
+      ? jobsRaw.map((j) => ({
+          id: j.id,
+          name: j.name || '',
+          stage: j.stage || '',
+          status: j.status || '',
+          webUrl: j.web_url || '',
+        }))
+      : []
+    return { status: pl.status || '', webUrl: pl.web_url || '', jobs }
+  })()
 }
 
 // Full MR diff. Prefers the harness-cached <short>.diff.patch (fast, exact same

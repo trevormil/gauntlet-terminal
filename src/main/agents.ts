@@ -337,28 +337,32 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   if (!repoRoot) return { error: 'not a git repo' }
   if (!spec.steps.length) return { error: 'no steps' }
   const ts = Date.now()
-  const worktree = join(WORKTREES, basename(repoRoot) || 'repo', `${spec.id}-${ts}`)
+  // ts + random tag → unique worktree path + branch even if two runs of the
+  // same agent start in the same millisecond (parallel fan-out / fast clicks).
+  const tag = `${ts}-${Math.random().toString(36).slice(2, 6)}`
+  const worktree = join(WORKTREES, basename(repoRoot) || 'repo', `${spec.id}-${tag}`)
   let branch: string
+  const git = (args: string[]) =>
+    execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
   try {
     if (spec.prRef) {
       // Fetch the MR head and check it out detached; the agent pushes back to
-      // the source branch (HEAD:<sourceBranch>) to update the MR.
-      execFileSync('git', ['-C', repoRoot, 'fetch', 'origin', spec.prRef.sourceBranch], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      execFileSync('git', ['-C', repoRoot, 'worktree', 'add', '--detach', worktree, 'FETCH_HEAD'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
+      // the source branch (HEAD:<sourceBranch>) to update the MR. Reference the
+      // branch-specific remote-tracking ref (origin/<branch>) rather than the
+      // shared FETCH_HEAD — two PR agents fetching different branches in the
+      // same repo concurrently would otherwise clobber each other's FETCH_HEAD.
+      git(['fetch', 'origin', spec.prRef.sourceBranch])
+      let ref = `origin/${spec.prRef.sourceBranch}`
+      try {
+        git(['rev-parse', '--verify', '--quiet', ref])
+      } catch {
+        ref = 'FETCH_HEAD' // remote-tracking ref not configured — best effort
+      }
+      git(['worktree', 'add', '--detach', worktree, ref])
       branch = spec.prRef.sourceBranch
     } else {
-      branch = `agent/${spec.id}-${ts}`
-      const base = defaultBase(repoRoot)
-      execFileSync('git', ['-C', repoRoot, 'worktree', 'add', worktree, '-b', branch, base], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
+      branch = `agent/${spec.id}-${tag}`
+      git(['worktree', 'add', worktree, '-b', branch, defaultBase(repoRoot)])
     }
   } catch (e) {
     return { error: `worktree: ${(e as Error).message}` }

@@ -29,6 +29,16 @@ export const verdictTone = (v: string): BadgeTone =>
 
 export const testTone = (s: string): BadgeTone => (s === 'pass' ? 'green' : s === 'fail' ? 'red' : 'mute')
 
+// GitLab CI pipeline/job statuses → badge tone.
+export const ciTone = (s: string): BadgeTone => {
+  const x = (s || '').toLowerCase()
+  if (x === 'success') return 'green'
+  if (x === 'failed') return 'red'
+  if (x === 'running' || x === 'pending') return 'yellow'
+  if (x === 'manual') return 'blue'
+  return 'mute' // created, canceled, skipped, scheduled, …
+}
+
 export const sevTone = (s: string): BadgeTone => {
   const x = (s || '').toLowerCase()
   return x === 'critical' || x === 'high' ? 'red' : x === 'medium' ? 'yellow' : 'blue'

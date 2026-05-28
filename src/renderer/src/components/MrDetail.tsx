@@ -14,8 +14,9 @@ import hljs from 'highlight.js/lib/common'
 import { Badge } from './ui'
 import { Markdown } from './Markdown'
 import { PrAgentActions } from './PrAgentActions'
-import { stateTone, verdictTone, testTone, sevTone } from '../lib/badges'
-import type { MrDetail, Finding } from '../lib/types'
+import { MrMergeButton } from './MrMergeButton'
+import { stateTone, verdictTone, testTone, sevTone, ciTone } from '../lib/badges'
+import type { MrDetail, Finding, CiInfo, CiJob } from '../lib/types'
 
 const HLJS_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', mjs: 'javascript',
@@ -252,7 +253,65 @@ function DiffView({ diff, scope }: { diff: string; scope: string }) {
   )
 }
 
-function Overview({ mr }: { mr: MrDetail }) {
+// Forge CI pipeline for the MR head — overall status + jobs grouped by stage.
+function CiPanel({ ci }: { ci: CiInfo | null | undefined }) {
+  if (ci === undefined)
+    return <div className="mb-4 text-[11px] text-zinc-600">Loading CI pipeline…</div>
+  if (ci === null)
+    return <div className="mb-4 text-[11px] text-zinc-600">No CI pipeline for this MR.</div>
+
+  // group jobs by stage, stages in run order (ascending job id)
+  const stages: { stage: string; jobs: CiJob[] }[] = []
+  for (const j of [...ci.jobs].sort((a, b) => a.id - b.id)) {
+    let g = stages.find((s) => s.stage === j.stage)
+    if (!g) stages.push((g = { stage: j.stage, jobs: [] }))
+    g.jobs.push(j)
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">CI pipeline</span>
+        <Badge tone={ciTone(ci.status)}>{ci.status || 'unknown'}</Badge>
+        {ci.webUrl && (
+          <button
+            onClick={() => window.gt.openExternal(ci.webUrl)}
+            className="inline-flex items-center gap-0.5 text-[11px] text-zinc-500 hover:text-zinc-300"
+          >
+            logs
+            <ArrowUpRight size={11} strokeWidth={2} />
+          </button>
+        )}
+      </div>
+      {stages.length === 0 ? (
+        <div className="text-[11px] text-zinc-600">No jobs.</div>
+      ) : (
+        <div className="space-y-1.5">
+          {stages.map((s) => (
+            <div key={s.stage} className="flex items-start gap-2">
+              <span className="mt-0.5 w-20 shrink-0 truncate text-[10px] uppercase tracking-wide text-zinc-600">
+                {s.stage}
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {s.jobs.map((j) => (
+                  <button
+                    key={j.id}
+                    onClick={() => j.webUrl && window.gt.openExternal(j.webUrl)}
+                    title={`${j.name} · ${j.status}`}
+                  >
+                    <Badge tone={ciTone(j.status)}>{j.name}</Badge>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Overview({ mr, ci }: { mr: MrDetail; ci: CiInfo | null | undefined }) {
   return (
     <div className="h-full overflow-y-auto p-5">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-zinc-500">
@@ -274,6 +333,7 @@ function Overview({ mr }: { mr: MrDetail }) {
         )}
         {mr.artifactShortSha && <span className="font-mono text-zinc-600">artifact {mr.artifactShortSha}</span>}
       </div>
+      <CiPanel ci={ci} />
       {mr.description ? (
         <Markdown>{mr.description}</Markdown>
       ) : (
@@ -343,12 +403,15 @@ export function MrDetailView({
   iid,
   repoLabel,
   onBack,
+  onMerged,
 }: {
   iid: number
   repoLabel: string
   onBack: () => void
+  onMerged?: () => void
 }) {
   const [mr, setMr] = useState<MrDetail | null | undefined>(undefined)
+  const [ci, setCi] = useState<CiInfo | null | undefined>(undefined)
   const [view, setView] = useState<'overview' | 'review' | 'findings' | 'suggestions' | 'diff'>(
     'overview',
   )
@@ -356,8 +419,10 @@ export function MrDetailView({
 
   useEffect(() => {
     setMr(undefined)
+    setCi(undefined)
     setDiff(null)
     window.gt.getMr(iid).then(setMr)
+    window.gt.getMrCi(iid).then(setCi)
   }, [iid])
   useEffect(() => {
     if (view === 'diff' && diff === null) {
@@ -403,6 +468,7 @@ export function MrDetailView({
         {mr.draft && <Badge tone="warn">draft</Badge>}
         <div className="flex items-center gap-1.5">
           <PrAgentActions pr={mr} />
+          {mr.state === 'opened' && <MrMergeButton iid={mr.iid} onMerged={onMerged ?? onBack} />}
           <button
             onClick={() => window.gt.openExternal(mr.webUrl)}
             className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
@@ -456,7 +522,7 @@ export function MrDetailView({
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {view === 'overview' && <Overview mr={mr} />}
+        {view === 'overview' && <Overview mr={mr} ci={ci} />}
         {view === 'review' && <ReviewBody mr={mr} />}
         {view === 'findings' && (
           <FindingCards items={mr.findings} empty="No findings for this MR." />

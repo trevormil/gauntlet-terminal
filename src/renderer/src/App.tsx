@@ -71,22 +71,35 @@ export default function App() {
   }, [sessions.length])
   const statusByKey = Object.fromEntries(fleetData.map((f) => [f.key, f.status]))
 
-  // tell main which session is active (data IPC reads it)
+  // tell main which session is active (data IPC reads it). Also fired
+  // imperatively in `activate()` so cur() is updated in main BEFORE the newly
+  // active SessionView's child effects fetch context — otherwise that session
+  // would briefly read the previously-active session's repo/branch.
   useEffect(() => {
     if (activeKey) window.gt.setActiveSession(activeKey)
   }, [activeKey])
 
+  // select a session: update cur() in main first, then flip the active key
+  const activate = (key: string) => {
+    window.gt.setActiveSession(key)
+    setActiveKey(key)
+  }
+
   const addSession = (choice: Choice) => {
     const key = crypto.randomUUID()
     setSessions((s) => [...s, { key, choice, info: { sessionId: '', cwd: '' } }])
-    setActiveKey(key)
+    activate(key)
     setAdding(false)
   }
   const closeSession = (key: string) => {
     window.gt.stopSession(key)
     setSessions((s) => {
       const next = s.filter((x) => x.key !== key)
-      if (activeKey === key) setActiveKey(next[next.length - 1]?.key ?? null)
+      if (activeKey === key) {
+        const fallback = next[next.length - 1]?.key ?? null
+        if (fallback) activate(fallback)
+        else setActiveKey(null)
+      }
       if (next.length === 0) setAdding(true)
       return next
     })
@@ -122,7 +135,7 @@ export default function App() {
               <div
                 key={s.key}
                 style={noDrag}
-                onClick={() => setActiveKey(s.key)}
+                onClick={() => activate(s.key)}
                 className={`group flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] ${
                   on
                     ? 'border-[var(--gt-accent)]/50 bg-[var(--gt-accent)]/15 text-zinc-100'
@@ -202,7 +215,7 @@ export default function App() {
               sessions={fleetData}
               activeKey={activeKey}
               onPick={(key) => {
-                setActiveKey(key)
+                activate(key)
                 setFleet(false)
               }}
               onNew={() => {
