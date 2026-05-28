@@ -143,7 +143,10 @@ function createWindow() {
     width: 1320,
     height: 820,
     backgroundColor: '#0a0a0f',
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: 'hidden',
+    // explicit position so the ●●● controls sit visible + vertically centered in
+    // the 36px (h-9) tab bar, instead of being clipped/mis-aligned by the default
+    trafficLightPosition: { x: 14, y: 11 },
     title: 'Gauntlet Terminal',
     icon: join(__dirname, '../../build/icon.png'),
     webPreferences: { preload: join(__dirname, '../preload/index.mjs'), sandbox: false },

@@ -1,38 +1,28 @@
 import { useEffect, useRef } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
-import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
-import { syntaxHighlighting } from '@codemirror/language'
+import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
-import type { Extension } from '@codemirror/state'
+import { Prec, type Extension } from '@codemirror/state'
 
-// Own the editor chrome (a dark surface that matches the app) and keep only the
-// one-dark *syntax* colors. Using the full oneDark theme let its medium-gray
-// #282c34 background win over our override — too light against the near-black UI.
+// oneDark supplies the syntax highlighting (its token colors work well). We only
+// override the *chrome* — oneDark's #282c34 background reads too light over the
+// near-black UI. Prec.highest makes these same-selector rules beat the theme.
 const EDITOR_BG = '#0f0f15'
-const gtTheme = EditorView.theme(
-  {
-    '&': { height: '100%', backgroundColor: EDITOR_BG, color: '#e7e7ee' },
+const chrome = Prec.highest(
+  EditorView.theme({
+    '&': { height: '100%', backgroundColor: EDITOR_BG },
+    '.cm-gutters': { backgroundColor: EDITOR_BG, border: 'none', color: '#3d3d4a' },
+    '.cm-activeLineGutter': { backgroundColor: 'rgba(255,255,255,0.03)', color: '#8a8a9a' },
+    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.022)' },
     '.cm-scroller': {
       fontFamily: "'IBM Plex Mono', 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace",
       fontSize: '13px',
       lineHeight: '1.55',
     },
-    '.cm-gutters': { backgroundColor: EDITOR_BG, border: 'none', color: '#3d3d4a' },
-    '.cm-activeLineGutter': { backgroundColor: 'rgba(255,255,255,0.03)', color: '#8a8a9a' },
-    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.022)' },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-      backgroundColor: 'rgba(124,110,246,0.28)',
-    },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--gt-accent)' },
     '.cm-content': { caretColor: 'var(--gt-accent)' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--gt-accent)' },
     '&.cm-focused': { outline: 'none' },
-    '.cm-tooltip': {
-      backgroundColor: 'var(--gt-panel)',
-      border: '1px solid var(--gt-border)',
-      borderRadius: '8px',
-    },
-  },
-  { dark: true },
+  }),
 )
 
 export function CodeEditor({
@@ -72,17 +62,13 @@ export function CodeEditor({
       value={value}
       onChange={onChange}
       editable={editable}
-      theme={gtTheme}
+      theme={oneDark}
       height="100%"
       style={{ height: '100%', background: EDITOR_BG }}
       onCreateEditor={(view) => {
         viewRef.current = view
       }}
-      extensions={[
-        syntaxHighlighting(oneDarkHighlightStyle),
-        ...(wrap ? [EditorView.lineWrapping] : []),
-        ...extensions,
-      ]}
+      extensions={[chrome, ...(wrap ? [EditorView.lineWrapping] : []), ...extensions]}
       basicSetup={{
         lineNumbers: true,
         foldGutter: false,
