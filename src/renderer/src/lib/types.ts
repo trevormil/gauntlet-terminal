@@ -118,12 +118,14 @@ export type Agent = {
   opensPr?: boolean
   engine?: Engine
 }
+export type Persona = { id: string; title: string; description: string; icon?: string; prompt: string }
 export type AgentRunStatus = 'running' | 'done' | 'failed' | 'canceled' | 'interrupted'
 export type AgentRun = {
   id: string
   agentId: string
   agentTitle: string
   engine: Engine
+  persona?: string
   status: AgentRunStatus
   startedAt: number
   endedAt?: number
@@ -285,8 +287,9 @@ export type GtApi = {
   typeIntoActive: (text: string) => void
   agents: {
     list: () => Promise<Agent[]>
-    run: (id: string, engine?: Engine) => Promise<AgentRun | { error: string }>
-    runTicket: (slug: string, engine: Engine) => Promise<AgentRun | { error: string }>
+    personas: () => Promise<Persona[]>
+    run: (id: string, engine?: Engine, persona?: string) => Promise<AgentRun | { error: string }>
+    runTicket: (slug: string, engine: Engine, persona?: string) => Promise<AgentRun | { error: string }>
     runs: () => Promise<AgentRun[]>
     cancel: (runId: string) => Promise<boolean>
     removeWorktree: (runId: string) => Promise<boolean>

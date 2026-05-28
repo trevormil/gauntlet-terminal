@@ -38,9 +38,11 @@ const gt = {
   // on-demand codex/claude agents
   agents: {
     list: () => ipcRenderer.invoke('agents:list'),
-    run: (id: string, engine?: string) => ipcRenderer.invoke('agents:run', id, engine),
-    runTicket: (slug: string, engine: string) =>
-      ipcRenderer.invoke('agents:run-ticket', slug, engine),
+    personas: () => ipcRenderer.invoke('personas:list'),
+    run: (id: string, engine?: string, persona?: string) =>
+      ipcRenderer.invoke('agents:run', id, engine, persona),
+    runTicket: (slug: string, engine: string, persona?: string) =>
+      ipcRenderer.invoke('agents:run-ticket', slug, engine, persona),
     runs: () => ipcRenderer.invoke('agents:runs'),
     cancel: (runId: string) => ipcRenderer.invoke('agents:cancel', runId),
     removeWorktree: (runId: string) => ipcRenderer.invoke('agents:remove-worktree', runId),

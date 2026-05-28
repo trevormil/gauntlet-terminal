@@ -97,8 +97,8 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     if (el) el.scrollTop = el.scrollHeight
   }, [sel, selectedRun && outputs[selectedRun.id]])
 
-  const run = async (id: string, engine: Engine) => {
-    const r = await window.gt.agents.run(id, engine)
+  const run = async (id: string, engine: Engine, persona: string) => {
+    const r = await window.gt.agents.run(id, engine, persona)
     if ('error' in r) {
       setOutputs((o) => ({ ...o, __err: r.error }))
       return
@@ -240,6 +240,9 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                 <Badge tone={statusTone(selectedRun.status)}>{selectedRun.status}</Badge>
                 <span className="text-[12px] font-semibold text-zinc-100">{selectedRun.agentTitle}</span>
                 <span className="text-[9.5px] uppercase text-zinc-600">{selectedRun.engine}</span>
+                {selectedRun.persona && (
+                  <span className="text-[10px] text-[var(--gt-accent-light)]">as {selectedRun.persona}</span>
+                )}
                 <span className="font-mono text-[10.5px] text-zinc-600">{selectedRun.branch}</span>
                 <div className="flex-1" />
                 {selectedRun.status === 'running' && (
@@ -283,8 +286,8 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
         <EnginePicker
           title={`Run · ${picking.title}`}
           onClose={() => setPicking(null)}
-          onPick={(e) => {
-            run(picking.id, e)
+          onPick={(e, persona) => {
+            run(picking.id, e, persona)
             setPicking(null)
           }}
         />

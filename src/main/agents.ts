@@ -13,6 +13,7 @@ import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { emitActivity } from './events'
 import { repoForCwd } from './repo'
+import { getPersona } from './personas'
 
 export type Engine = 'codex' | 'claude'
 
@@ -36,6 +37,7 @@ export type AgentRun = {
   agentId: string
   agentTitle: string
   engine: Engine
+  persona?: string
   status: AgentRunStatus
   startedAt: number
   endedAt?: number
@@ -224,7 +226,7 @@ function buildCmd(engine: Engine, worktree: string, prompt: string): string {
   return `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(prompt)}`
 }
 
-type RunSpec = { id: string; title: string; prompt: string; engine: Engine }
+type RunSpec = { id: string; title: string; prompt: string; engine: Engine; persona?: string }
 
 function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } {
   if (!repoRoot) return { error: 'not a git repo' }
@@ -246,12 +248,13 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
     agentId: spec.id,
     agentTitle: spec.title,
     engine: spec.engine,
+    persona: spec.persona,
     status: 'running',
     startedAt: ts,
     repoRoot,
     worktree,
     branch,
-    output: `▸ ${spec.title} · ${spec.engine} · worktree ${worktree}\n▸ branch ${branch} (off ${base})\n▸ running…\n\n`,
+    output: `▸ ${spec.title} · ${spec.engine}${spec.persona ? ` · as ${spec.persona}` : ''} · worktree ${worktree}\n▸ branch ${branch} (off ${base})\n▸ running…\n\n`,
   }
   runs.set(run.id, run)
   persistMeta(run)
@@ -305,14 +308,27 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   return run
 }
 
-export function runAgent(repoRoot: string, agentId: string, engine?: Engine): AgentRun | { error: string } {
+// Prepend a persona framing (if any) to the task prompt.
+function withPersona(repoRoot: string, personaId: string | undefined, base: string) {
+  const p = personaId ? getPersona(repoRoot, personaId) : null
+  return { prompt: p ? `${p.prompt}\n\n---\n\n${base}` : base, persona: p?.title }
+}
+
+export function runAgent(
+  repoRoot: string,
+  agentId: string,
+  engine?: Engine,
+  personaId?: string,
+): AgentRun | { error: string } {
   const agent = readAgents(repoRoot).find((a) => a.id === agentId)
   if (!agent) return { error: 'unknown agent' }
+  const { prompt, persona } = withPersona(repoRoot, personaId, agent.prompt)
   return runSpec(repoRoot, {
     id: agent.id,
     title: agent.title,
-    prompt: agent.prompt,
+    prompt,
     engine: engine || agent.engine || 'codex',
+    persona,
   })
 }
 
@@ -321,9 +337,11 @@ export function runTicketAgent(
   repoRoot: string,
   ticket: { id: number; title: string; body: string },
   engine: Engine,
+  personaId?: string,
 ): AgentRun | { error: string } {
-  const prompt = `Implement backlog ticket #${ticket.id}: ${ticket.title}\n\n${ticket.body}\n\nWork in this worktree on its branch. Implement the ticket end to end — keep changes surgical and add/adjust tests. Commit your work and open a PR that references ticket #${ticket.id}. If fully delivered set the ticket status to closed (else in-progress) and link the PR in its prs: field. End with a short summary of what changed and the PR URL.`
-  return runSpec(repoRoot, { id: `ticket-${ticket.id}`, title: `Implement #${ticket.id}`, prompt, engine })
+  const base = `Implement backlog ticket #${ticket.id}: ${ticket.title}\n\n${ticket.body}\n\nWork in this worktree on its branch. Implement the ticket end to end — keep changes surgical and add/adjust tests. Commit your work and open a PR that references ticket #${ticket.id}. If fully delivered set the ticket status to closed (else in-progress) and link the PR in its prs: field. End with a short summary of what changed and the PR URL.`
+  const { prompt, persona } = withPersona(repoRoot, personaId, base)
+  return runSpec(repoRoot, { id: `ticket-${ticket.id}`, title: `Implement #${ticket.id}`, prompt, engine, persona })
 }
 
 export function cancelRun(runId: string): boolean {

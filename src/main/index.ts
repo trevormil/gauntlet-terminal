@@ -44,6 +44,7 @@ import {
   dueSchedules,
   type Cadence,
 } from './schedules'
+import { readPersonas } from './personas'
 
 const CLAUDE = process.env.GT_CLAUDE_BIN || 'claude'
 const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
@@ -352,13 +353,16 @@ ipcMain.handle('activity:clear', () => clearActivity())
 ipcMain.handle('snippets:list', () => readSnippets())
 ipcMain.handle('snippets:save', (_e, list: Snippet[]) => writeSnippets(list))
 ipcMain.handle('agents:list', () => readAgents(repoRootOf(cur().cwd)))
-ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine) =>
-  runAgent(repoRootOf(cur().cwd), agentId, engine),
+ipcMain.handle('personas:list', () => readPersonas(repoRootOf(cur().cwd)))
+ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine, persona?: string) =>
+  runAgent(repoRootOf(cur().cwd), agentId, engine, persona),
 )
-ipcMain.handle('agents:run-ticket', (_e, slug: string, engine: Engine) => {
+ipcMain.handle('agents:run-ticket', (_e, slug: string, engine: Engine, persona?: string) => {
   const root = repoRootOf(cur().cwd)
   const t = getTicket(root, slug)
-  return t ? runTicketAgent(root, { id: t.id, title: t.title, body: t.body }, engine) : { error: 'ticket not found' }
+  return t
+    ? runTicketAgent(root, { id: t.id, title: t.title, body: t.body }, engine, persona)
+    : { error: 'ticket not found' }
 })
 ipcMain.handle('agents:runs', () => listRuns())
 ipcMain.handle('agents:cancel', (_e, runId: string) => cancelRun(runId))
