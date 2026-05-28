@@ -37,3 +37,39 @@ export function repoRootOf(cwd: string): string {
     return ''
   }
 }
+
+export type GitStatus = {
+  ok: boolean
+  branch: string
+  ahead: number
+  behind: number
+  dirty: number
+}
+
+export function gitStatus(cwd: string): GitStatus {
+  const out: GitStatus = { ok: false, branch: '', ahead: 0, behind: 0, dirty: 0 }
+  if (!cwd) return out
+  const run = (args: string[]) => {
+    try {
+      return execFileSync('git', ['-C', cwd, ...args], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim()
+    } catch {
+      return ''
+    }
+  }
+  const branch = run(['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (!branch) return out
+  out.ok = true
+  out.branch = branch
+  const ab = run(['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
+  if (ab) {
+    const [behind, ahead] = ab.split(/\s+/).map(Number)
+    out.behind = behind || 0
+    out.ahead = ahead || 0
+  }
+  const porcelain = run(['status', '--porcelain'])
+  out.dirty = porcelain ? porcelain.split('\n').filter(Boolean).length : 0
+  return out
+}

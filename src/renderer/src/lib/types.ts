@@ -175,6 +175,8 @@ export type GtApi = {
   transcript: () => Promise<TranscriptStats>
   harnessTdd: () => Promise<TddInfo>
   usage: () => Promise<Usage>
+  gitStatus: () => Promise<GitStatus>
+  mrSummary: () => Promise<MrSummary>
   meta: () => Promise<SessionInfo>
   listCommandWidgets: () => Promise<CommandWidget[]>
   runCommand: (command: string) => Promise<CommandResult>
@@ -206,6 +208,8 @@ export type GtApi = {
 
 export type FileEntry = { name: string; path: string; dir: boolean }
 export type SearchHit = { file: string; line: number; text: string }
+export type GitStatus = { ok: boolean; branch: string; ahead: number; behind: number; dirty: number }
+export type MrSummary = { open: number; approve: number; changes: number; needsReview: number }
 
 /** A full-screen tab. Auto-discovered from src/renderer/src/tabs/<id>/index.tsx. */
 export type Tab = {

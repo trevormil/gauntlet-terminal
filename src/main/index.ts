@@ -7,9 +7,9 @@ import * as pty from 'node-pty'
 import { readTranscriptStats, readHarnessTdd, listSessions, findSessionFile } from './data'
 import { readUsage } from './usage'
 import { listCommandWidgets, runCommand } from './widgets'
-import { repoRootOf, repoForCwd } from './repo'
+import { repoRootOf, repoForCwd, gitStatus } from './repo'
 import { listTickets, getTicket, createTicket, type NewTicket } from './backlog'
-import { listMrs, getMr, getMrDiff } from './mrs'
+import { listMrs, getMr, getMrDiff, mrSummary } from './mrs'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 
@@ -164,6 +164,8 @@ ipcMain.on('pty:resize', (_e, size: { cols: number; rows: number }) => {
 ipcMain.handle('data:transcript', () => readTranscriptStats(pinned.sessionId))
 ipcMain.handle('data:harness-tdd', () => readHarnessTdd(pinned.cwd))
 ipcMain.handle('data:usage', () => readUsage())
+ipcMain.handle('data:git-status', () => gitStatus(pinned.cwd))
+ipcMain.handle('data:mr-summary', () => mrSummary(repoRootOf(pinned.cwd)))
 ipcMain.handle('data:meta', () => ({ ...pinned, claude: CLAUDE }))
 
 // ---- command widgets (declarative, per-repo extensible) ----

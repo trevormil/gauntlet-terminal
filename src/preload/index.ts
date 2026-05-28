@@ -37,6 +37,8 @@ const gt = {
   transcript: () => ipcRenderer.invoke('data:transcript'),
   harnessTdd: () => ipcRenderer.invoke('data:harness-tdd'),
   usage: () => ipcRenderer.invoke('data:usage'),
+  gitStatus: () => ipcRenderer.invoke('data:git-status'),
+  mrSummary: () => ipcRenderer.invoke('data:mr-summary'),
   meta: () => ipcRenderer.invoke('data:meta'),
 
   // command widgets (declarative / per-repo)

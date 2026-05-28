@@ -89,6 +89,26 @@ export function listMrs(repoRoot: string): Promise<Mr[]> {
   })
 }
 
+export type MrSummary = { open: number; approve: number; changes: number; needsReview: number }
+let summaryCache: { ts: number; root: string; mrs: Mr[] } | null = null
+// Cached (60s) MR counts for the cockpit widget — glab is slow to call per poll.
+export async function mrSummary(repoRoot: string): Promise<MrSummary> {
+  const now = Date.now()
+  let mrs: Mr[]
+  if (summaryCache && summaryCache.root === repoRoot && now - summaryCache.ts < 60_000) {
+    mrs = summaryCache.mrs
+  } else {
+    mrs = await listMrs(repoRoot)
+    summaryCache = { ts: now, root: repoRoot, mrs }
+  }
+  const opened = mrs.filter((m) => m.state === 'opened')
+  const approve = opened.filter((m) => m.review?.verdict === 'approve').length
+  const changes = opened.filter(
+    (m) => m.review?.verdict === 'request-changes' || m.review?.verdict === 'blocked',
+  ).length
+  return { open: opened.length, approve, changes, needsReview: opened.length - approve - changes }
+}
+
 // Full MR detail: glab mr view + the harness review body/findings/suggestions
 // for this iid.
 export function getMr(repoRoot: string, iid: number): Promise<MrDetail | null> {
