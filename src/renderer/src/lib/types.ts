@@ -272,6 +272,24 @@ export type HitlItem = {
   createdAt: number
   resolvedAt?: number
 }
+export type UnifiedRun = {
+  id: string
+  source: 'cron' | 'agent'
+  agentId: string
+  agentTitle: string
+  engine: string
+  status: string
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  repoRoot: string
+  repoLabel: string
+  branch: string
+  worktree: string
+  scheduleId?: string
+  error?: string
+}
+
 export type CronRun = {
   id: string
   scheduleId: string
@@ -450,6 +468,8 @@ export type GtApi = {
   }
   typeIntoActive: (text: string) => void
   agents: {
+    allRuns: () => Promise<UnifiedRun[]>
+    runLog: (source: 'cron' | 'agent', runId: string) => Promise<string>
     list: () => Promise<Agent[]>
     save: (agent: Partial<Agent> & { id: string; title: string; prompt: string }) => Promise<{ ok: true } | { error: string }>
     reset: (id: string) => Promise<{ ok: true } | { error: string }>

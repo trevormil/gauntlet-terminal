@@ -369,12 +369,19 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   const logRef = useRef<HTMLPreElement>(null)
 
   const reloadAgents = () => window.gt.agents.list().then(setAgents)
-  // Lazy-load the bash script body the first time an agent is expanded; cache
-  // the result (including null when no script exists) so we don't re-hit IPC.
+  // Lazy-load the bash script body the first time we need it; cache the
+  // result (including null when definitively no script exists) so we don't
+  // re-hit IPC. Triggered on agent select (new master-detail layout) and on
+  // expand toggle (legacy paths).
   const loadScript = (id: string) => {
     if (id in scripts) return
     window.gt.agents.script(id).then((r) => setScripts((m) => ({ ...m, [id]: r })))
   }
+  // Auto-load script when an agent is selected so the right pane's Script
+  // section can show "Loading…" → bash / prompt without a manual click.
+  useEffect(() => {
+    if (selAgentId) loadScript(selAgentId)
+  }, [selAgentId]) // eslint-disable-line react-hooks/exhaustive-deps
   const toggleExpand = (id: string) => {
     loadScript(id)
     setExpanded((s) => {
@@ -673,12 +680,23 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
 
                 {/* Scrollable body: script preview, runs, output */}
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  {/* Script preview */}
+                  {/* Script preview — script can be undefined (loading), null
+                      (definitively no .sh), or {path,body} (script loaded). */}
                   <section className="border-b border-[var(--gt-border)]/60 p-4">
                     <h3 className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                      {script ? <Badge tone="blue">bash script</Badge> : <Badge tone="mute">prompt</Badge>}
-                      <span className="ml-1 font-normal normal-case tracking-normal">
-                        {script ? script.path : 'no .agents/' + selectedAgent.id + '.sh — runs as a single claude/codex prompt'}
+                      {script ? (
+                        <Badge tone="blue">bash script</Badge>
+                      ) : script === null ? (
+                        <Badge tone="mute">prompt</Badge>
+                      ) : (
+                        <Badge tone="mute">loading…</Badge>
+                      )}
+                      <span className="ml-1 min-w-0 flex-1 truncate font-normal normal-case tracking-normal">
+                        {script
+                          ? script.path
+                          : script === null
+                            ? `no .agents/${selectedAgent.id}.sh — runs as a single claude/codex prompt`
+                            : `reading .agents/${selectedAgent.id}.sh…`}
                       </span>
                       {script === null && (
                         <button
@@ -694,7 +712,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                               .then((s) => setScripts((m) => ({ ...m, [selectedAgent.id]: s })))
                             reloadAgents()
                           }}
-                          className="ml-auto inline-flex items-center gap-1 rounded-md border border-[var(--gt-accent)]/50 bg-[var(--gt-accent)]/10 px-2 py-0.5 text-[10px] normal-case tracking-normal text-[var(--gt-accent-light)] hover:bg-[var(--gt-accent)]/20"
+                          className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-accent)]/50 bg-[var(--gt-accent)]/10 px-2 py-0.5 text-[10px] normal-case tracking-normal text-[var(--gt-accent-light)] hover:bg-[var(--gt-accent)]/20"
                         >
                           convert to script
                         </button>
@@ -702,10 +720,14 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                     </h3>
                     {script ? (
                       <BashHighlight code={script.body} className="max-h-96" />
-                    ) : (
+                    ) : script === null ? (
                       <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-400">
                         {selectedAgent.prompt}
                       </pre>
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-[var(--gt-border)] p-4 text-center text-[11px] text-zinc-600">
+                        Loading script…
+                      </div>
                     )}
                   </section>
 

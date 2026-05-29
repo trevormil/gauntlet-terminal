@@ -1,0 +1,324 @@
+import { useEffect, useMemo, useState } from 'react'
+import { ListChecks, RefreshCw, FolderOpen, X } from 'lucide-react'
+import { Badge } from '../../components/ui'
+import type { BadgeTone } from '../../components/ui'
+import { EngineLogo } from '../../components/EngineLogo'
+import type { Tab, TabContext, UnifiedRun } from '../../lib/types'
+
+// One global view across every run TerMinal has fired — cron (launchd, via
+// bin/terminal-cron) AND in-process (Run button on Agents/Tickets/PRs). The
+// per-agent and per-schedule run views in Agents / Schedules stay as scoped
+// drill-downs; this tab is the unified picture.
+
+const statusTone = (s: string): BadgeTone =>
+  s === 'done' || s === 'pass'
+    ? 'green'
+    : s === 'failed' || s === 'fail'
+      ? 'red'
+      : s === 'running'
+        ? 'blue'
+        : s === 'canceled' || s === 'interrupted'
+          ? 'yellow'
+          : 'mute'
+
+const sourceTone = (s: 'cron' | 'agent'): BadgeTone => (s === 'cron' ? 'accent' : 'blue')
+
+function fmtWhen(ts?: number): string {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  const t = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return sameDay ? t : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${t}`
+}
+function fmtDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`
+  return `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`
+}
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+
+function RunsTab({ ctx: _ctx }: { ctx: TabContext }) {
+  const [runs, setRuns] = useState<UnifiedRun[] | null>(null)
+  const [source, setSource] = useState<'all' | 'cron' | 'agent'>('all')
+  const [status, setStatus] = useState<string>('all')
+  const [repo, setRepo] = useState('')
+  const [agentFilter, setAgentFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [sel, setSel] = useState<string | null>(null)
+  const [log, setLog] = useState<{ runId: string; text: string } | null>(null)
+
+  const reload = () => window.gt.agents.allRuns().then(setRuns)
+  useEffect(() => {
+    reload()
+    // Auto-refresh while at least one run is running. Cheap polling — the
+    // list itself is in-memory + tiny files on disk.
+    const t = setInterval(() => {
+      if (runs && runs.some((r) => r.status === 'running')) reload()
+    }, 2000)
+    return () => clearInterval(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filter chip options derived from loaded data.
+  const repoOptions = useMemo(() => {
+    if (!runs) return []
+    return [...new Set(runs.map((r) => r.repoLabel).filter(Boolean))].sort()
+  }, [runs])
+  const agentOptions = useMemo(() => {
+    if (!runs) return []
+    return [...new Set(runs.map((r) => r.agentId))].sort()
+  }, [runs])
+  const statusOptions = useMemo(() => {
+    if (!runs) return []
+    return [...new Set(runs.map((r) => r.status))].sort()
+  }, [runs])
+
+  const filtered = useMemo(() => {
+    if (!runs) return null
+    const q = search.trim().toLowerCase()
+    return runs.filter((r) => {
+      if (source !== 'all' && r.source !== source) return false
+      if (status !== 'all' && r.status !== status) return false
+      if (repo && r.repoLabel !== repo) return false
+      if (agentFilter && r.agentId !== agentFilter) return false
+      if (!q) return true
+      return (
+        r.agentTitle.toLowerCase().includes(q) ||
+        r.agentId.toLowerCase().includes(q) ||
+        r.branch.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q)
+      )
+    })
+  }, [runs, source, status, repo, agentFilter, search])
+
+  const selectedRun = (runs || []).find((r) => r.id === sel) || null
+
+  // Lazy-load + live-tail the log when a run is selected. Polls every 1.5s
+  // while the underlying run is still running so the operator sees streaming
+  // claude/codex output without manual reloads.
+  useEffect(() => {
+    if (!selectedRun) {
+      setLog(null)
+      return
+    }
+    let alive = true
+    const fetch = async () => {
+      const text = await window.gt.agents.runLog(selectedRun.source, selectedRun.id)
+      if (alive) setLog({ runId: selectedRun.id, text })
+    }
+    fetch()
+    if (selectedRun.status !== 'running') return () => {
+      alive = false
+    }
+    const t = setInterval(fetch, 1500)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+  }, [selectedRun?.id, selectedRun?.status])
+
+  const counts = useMemo(() => {
+    if (!runs) return { running: 0, done: 0, failed: 0 }
+    return {
+      running: runs.filter((r) => r.status === 'running').length,
+      done: runs.filter((r) => r.status === 'done').length,
+      failed: runs.filter((r) => r.status === 'failed').length,
+    }
+  }, [runs])
+
+  const FilterSelect = ({
+    value,
+    onChange,
+    options,
+    placeholder,
+  }: {
+    value: string
+    onChange: (v: string) => void
+    options: string[]
+    placeholder: string
+  }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[10.5px] text-zinc-300 outline-none"
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 bg-[var(--gt-bg)]">
+      {/* List */}
+      <div className="flex w-[58%] min-w-[420px] shrink-0 flex-col border-r border-[var(--gt-border)]">
+        {/* Header */}
+        <div className="shrink-0 space-y-1.5 border-b border-[var(--gt-border)] bg-[var(--gt-panel)]/40 p-2.5">
+          <div className="flex items-center gap-2">
+            <ListChecks size={14} strokeWidth={2} className="text-[var(--gt-accent-light)]" />
+            <span className="text-[12px] font-semibold text-zinc-200">All runs</span>
+            <span className="text-[10.5px] text-zinc-600">
+              {filtered ? `${filtered.length} / ${runs?.length || 0}` : '…'}
+            </span>
+            <span className="ml-2 inline-flex items-center gap-1.5 text-[10.5px]">
+              {counts.running > 0 && (
+                <Badge tone="blue">
+                  <span className="mr-0.5 inline-block h-1 w-1 rounded-full bg-current gt-pulse" />
+                  {counts.running} running
+                </Badge>
+              )}
+              <Badge tone="green">{counts.done} done</Badge>
+              {counts.failed > 0 && <Badge tone="red">{counts.failed} failed</Badge>}
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={reload}
+              title="Reload runs"
+              className="rounded-md p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+            >
+              <RefreshCw size={11} strokeWidth={2} />
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search agent / branch / id…"
+              className="min-w-[140px] flex-1 rounded-md border border-[var(--gt-border)] bg-black/30 px-2 py-1 text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-[var(--gt-accent)]/60 focus:outline-none"
+            />
+            <div className="flex items-center gap-0.5 rounded-md border border-[var(--gt-border)] p-0.5">
+              {(['all', 'cron', 'agent'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSource(s)}
+                  className={`rounded-sm px-1.5 py-0.5 text-[10px] capitalize ${
+                    source === s ? 'bg-[var(--gt-accent)]/20 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <FilterSelect value={status} onChange={(v) => setStatus(v || 'all')} options={statusOptions} placeholder="all status" />
+            <FilterSelect value={repo} onChange={setRepo} options={repoOptions} placeholder="all repos" />
+            <FilterSelect value={agentFilter} onChange={setAgentFilter} options={agentOptions} placeholder="all agents" />
+          </div>
+        </div>
+
+        {/* Rows */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {runs === null ? (
+            <div className="p-4 text-[12px] text-zinc-600">Loading runs…</div>
+          ) : filtered && filtered.length === 0 ? (
+            <div className="p-4 text-[12px] text-zinc-600">No runs match these filters.</div>
+          ) : (
+            (filtered || []).map((r) => {
+              const dur = r.endedAt
+                ? fmtDuration(r.endedAt - r.startedAt)
+                : r.status === 'running'
+                  ? 'running…'
+                  : '—'
+              const selectedHere = sel === r.id
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => setSel(r.id)}
+                  className={`flex w-full items-center gap-2 border-b border-[var(--gt-border)]/40 px-3 py-2 text-left ${
+                    selectedHere ? 'bg-[var(--gt-accent)]/15' : 'hover:bg-white/5'
+                  }`}
+                >
+                  <Badge tone={statusTone(r.status)}>{r.status}</Badge>
+                  <Badge tone={sourceTone(r.source)}>{r.source}</Badge>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-200">{r.agentTitle}</span>
+                  <span className="shrink-0 font-mono text-[9.5px] text-zinc-600">{r.repoLabel}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[9.5px] uppercase text-zinc-600">
+                    <EngineLogo engine={r.engine} size={10} />
+                    {r.engine}
+                  </span>
+                  <span className="shrink-0 font-mono tabular-nums text-[10px] text-zinc-500">{dur}</span>
+                  <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{fmtWhen(r.startedAt)}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Detail */}
+      <section className="flex min-w-0 flex-1 flex-col">
+        {!selectedRun ? (
+          <div className="flex h-full items-center justify-center text-[12px] text-zinc-600">
+            Pick a run on the left.
+          </div>
+        ) : (
+          <>
+            <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--gt-border)] px-5 py-2.5">
+              <Badge tone={statusTone(selectedRun.status)}>{selectedRun.status}</Badge>
+              <Badge tone={sourceTone(selectedRun.source)}>{selectedRun.source}</Badge>
+              <span className="text-[13px] font-semibold text-zinc-100">{selectedRun.agentTitle}</span>
+              <span className="inline-flex items-center gap-1 text-[10px] uppercase text-zinc-600">
+                <EngineLogo engine={selectedRun.engine} size={11} />
+                {selectedRun.engine}
+              </span>
+              <span className="font-mono text-[10.5px] text-zinc-600">{selectedRun.branch}</span>
+              <div className="flex-1" />
+              <span className="text-[10.5px] text-zinc-500">
+                started {fmtWhen(selectedRun.startedAt)}
+                {selectedRun.endedAt && (
+                  <> · {fmtDuration(selectedRun.endedAt - selectedRun.startedAt)}</>
+                )}
+              </span>
+              {selectedRun.worktree && (
+                <button
+                  onClick={() => window.gt.openExternal(`file://${selectedRun.worktree}`)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-1.5 py-0.5 text-[10.5px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+                >
+                  <FolderOpen size={10} strokeWidth={2} />
+                  Worktree
+                </button>
+              )}
+              <button
+                onClick={() => setSel(null)}
+                title="Close detail"
+                className="rounded-md p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+              >
+                <X size={11} strokeWidth={2} />
+              </button>
+            </header>
+            {selectedRun.error && (
+              <div className="shrink-0 border-b border-[var(--gt-border)]/60 bg-[var(--gt-red)]/10 px-5 py-2 text-[11.5px] text-[var(--gt-red)]">
+                {selectedRun.error}
+              </div>
+            )}
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-[#0c0c11] p-4 font-mono text-[11px] leading-relaxed text-zinc-300">
+              {stripAnsi(log?.text || '') || '…'}
+            </pre>
+          </>
+        )}
+      </section>
+    </div>
+  )
+}
+
+const tab: Tab = {
+  id: 'runs',
+  title: 'Runs',
+  icon: ListChecks,
+  order: 3.45, // between Agents (3) and Schedules (3.5)
+  appliesTo: () => true,
+  badge: async (gt) => {
+    try {
+      const rs = await gt.agents.allRuns()
+      return rs.filter((r) => r.status === 'running').length
+    } catch {
+      return 0
+    }
+  },
+  Component: RunsTab,
+}
+export default tab

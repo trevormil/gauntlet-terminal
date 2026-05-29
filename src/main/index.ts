@@ -91,7 +91,7 @@ import {
   removeAllJobs,
   runScheduleNow,
 } from './launchd'
-import { readCronRuns, readCronRunLog } from './cron-runs'
+import { readCronRuns, readCronRunLog, listAllRuns } from './cron-runs'
 import { readHitl, fileHitl, resolveHitl, removeHitl, type HitlItem } from './hitl'
 import { factoryHealth } from './factory-health'
 import { describeSpec, nextRun, type ScheduleSpec } from './cron'
@@ -554,6 +554,12 @@ ipcMain.handle('schedules:run-now', (_e, id: string) => {
   return { ok: true }
 })
 ipcMain.handle('schedules:runs', (_e, id?: string) => readCronRuns(id))
+ipcMain.handle('runs:all', () => listAllRuns())
+ipcMain.handle('runs:log', (_e, source: 'cron' | 'agent', runId: string) => {
+  if (source === 'cron') return readCronRunLog(runId)
+  // In-process agent run output lives in memory via listRuns(); look it up by id.
+  return listRuns().find((r) => r.id === runId)?.output || ''
+})
 ipcMain.handle('schedules:disabled-list', () => listDisabled())
 ipcMain.handle('schedules:disabled-toggle', (_e, id: string, disabled: boolean) => setAgentDisabled(id, disabled))
 ipcMain.handle('schedules:run-log', (_e, runId: string) => readCronRunLog(runId))
