@@ -418,6 +418,7 @@ export type GtApi = {
     get: (slug: string) => Promise<Ticket | null>
     create: (input: NewTicket) => Promise<Ticket>
     update: (slug: string, patch: { status?: string; priority?: string }) => Promise<boolean>
+    spawn: (text: string, engine: Engine) => Promise<AgentRun | { error: string }>
   }
   projectSessions: () => Promise<ProjectSession[]>
   getProjectSession: (slug: string) => Promise<ProjectSession | null>

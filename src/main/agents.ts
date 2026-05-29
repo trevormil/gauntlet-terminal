@@ -297,6 +297,8 @@ type RunSpec = {
   pipeline?: string
   /** PR-tab agents work ON an existing MR head instead of a fresh branch. */
   prRef?: { iid: number; sourceBranch: string }
+  /** Run in the repo itself (no worktree) — for quick, additive ops like ticket filing. */
+  inPlace?: boolean
 }
 
 function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } {
@@ -306,32 +308,38 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   // ts + random tag → unique worktree path + branch even if two runs of the
   // same agent start in the same millisecond (parallel fan-out / fast clicks).
   const tag = `${ts}-${Math.random().toString(36).slice(2, 6)}`
-  const worktree = join(resolvedWorktreesDir(), basename(repoRoot) || 'repo', `${spec.id}-${tag}`)
+  let worktree: string
   let branch: string
   const git = (args: string[]) =>
     execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-  try {
-    if (spec.prRef) {
-      // Fetch the MR head and check it out detached; the agent pushes back to
-      // the source branch (HEAD:<sourceBranch>) to update the MR. Reference the
-      // branch-specific remote-tracking ref (origin/<branch>) rather than the
-      // shared FETCH_HEAD — two PR agents fetching different branches in the
-      // same repo concurrently would otherwise clobber each other's FETCH_HEAD.
-      git(['fetch', 'origin', spec.prRef.sourceBranch])
-      let ref = `origin/${spec.prRef.sourceBranch}`
-      try {
-        git(['rev-parse', '--verify', '--quiet', ref])
-      } catch {
-        ref = 'FETCH_HEAD' // remote-tracking ref not configured — best effort
+  if (spec.inPlace) {
+    // Run directly in the repo (no worktree) — e.g. quick ticket filing that must
+    // land in the real backlog/, visible immediately, not on an isolated branch.
+    worktree = repoRoot
+    branch = '(working tree)'
+  } else {
+    worktree = join(resolvedWorktreesDir(), basename(repoRoot) || 'repo', `${spec.id}-${tag}`)
+    try {
+      if (spec.prRef) {
+        // Fetch the MR head and check it out detached; the agent pushes back to
+        // the source branch. Reference origin/<branch> rather than the shared
+        // FETCH_HEAD so concurrent PR agents don't clobber each other.
+        git(['fetch', 'origin', spec.prRef.sourceBranch])
+        let ref = `origin/${spec.prRef.sourceBranch}`
+        try {
+          git(['rev-parse', '--verify', '--quiet', ref])
+        } catch {
+          ref = 'FETCH_HEAD' // remote-tracking ref not configured — best effort
+        }
+        git(['worktree', 'add', '--detach', worktree, ref])
+        branch = spec.prRef.sourceBranch
+      } else {
+        branch = `agent/${spec.id}-${tag}`
+        git(['worktree', 'add', worktree, '-b', branch, defaultBase(repoRoot)])
       }
-      git(['worktree', 'add', '--detach', worktree, ref])
-      branch = spec.prRef.sourceBranch
-    } else {
-      branch = `agent/${spec.id}-${tag}`
-      git(['worktree', 'add', worktree, '-b', branch, defaultBase(repoRoot)])
+    } catch (e) {
+      return { error: `worktree: ${(e as Error).message}` }
     }
-  } catch (e) {
-    return { error: `worktree: ${(e as Error).message}` }
   }
   const repoLabel = repoForCwd(repoRoot)?.path || basename(repoRoot)
   const baseLine = spec.prRef
@@ -448,6 +456,25 @@ export function runTicketAgent(
   return runSpec(repoRoot, { id: `ticket-${ticket.id}`, title: `Implement #${ticket.id}`, steps, engine, persona, pipeline })
 }
 
+/** Spawn an agent that files ONE backlog ticket from a freeform request. Runs
+ *  in-place (no worktree) so the ticket lands in the real backlog/ immediately. */
+export function runTicketSpawn(
+  repoRoot: string,
+  text: string,
+  engine: Engine,
+): AgentRun | { error: string } {
+  const t = text.trim()
+  if (!t) return { error: 'empty request' }
+  const prompt = `File exactly ONE new backlog ticket for the request below, using this project's ticket conventions: allocate the next id (use .claude/skills/ticket/bin/next-ticket-id if present, else the next NNNN above the highest in backlog/), write backlog/NNNN-slug.md with valid YAML frontmatter (id, title, status: open, priority, type, horizon: now) matching backlog/EXAMPLE.md, put any detail in the body after the closing ---, and commit it. Do NOT implement anything or open a PR — just file the ticket. Request: ${t}`
+  return runSpec(repoRoot, {
+    id: 'ticket-spawn',
+    title: `File ticket · ${t.slice(0, 48)}`,
+    steps: [{ label: 'file ticket', prompt }],
+    engine,
+    inPlace: true,
+  })
+}
+
 export type PrAgentKind = 'review' | 'iterate'
 
 /** Spin an agent out ON an open MR: checks out the MR head, reviews/iterates,
@@ -504,6 +531,7 @@ export function cancelRun(runId: string): boolean {
 export function removeWorktree(runId: string): boolean {
   const run = runs.get(runId)
   if (!run || run.status === 'running') return false
+  if (run.worktree === run.repoRoot) return false // in-place run — never remove the repo
   try {
     execFileSync('git', ['-C', run.repoRoot, 'worktree', 'remove', run.worktree, '--force'], {
       stdio: 'ignore',

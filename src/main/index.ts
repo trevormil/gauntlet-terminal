@@ -50,6 +50,7 @@ import {
   hasAgents as repoHasAgents,
   runAgent,
   runTicketAgent,
+  runTicketSpawn,
   runPrAgent,
   listPipelines,
   listRuns,
@@ -522,6 +523,9 @@ ipcMain.handle('tickets:create', (_e, input: NewTicket) => {
   })
   return t
 })
+ipcMain.handle('tickets:spawn', (_e, text: string, engine: Engine) =>
+  runTicketSpawn(repoRootOf(cur().cwd), text, engine),
+)
 ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; priority?: string }) => {
   const root = repoRootOf(cur().cwd)
   const ok = updateTicket(root, slug, patch)

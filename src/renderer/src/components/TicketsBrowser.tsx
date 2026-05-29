@@ -6,7 +6,7 @@ import { EnginePicker } from './EnginePicker'
 import { MrDetailView } from './MrDetail'
 import { statusTone, priorityTone, typeTone, horizonTone, stateTone, verdictTone, testTone } from '../lib/badges'
 import type { BadgeTone } from './ui'
-import type { Ticket, TabContext, Mr } from '../lib/types'
+import type { Ticket, TabContext, Mr, Engine } from '../lib/types'
 
 // A ticket's `prs:` entries are forge URLs (…/-/merge_requests/N or …/pull/N).
 // Parse the change number so we can link to the in-app MR view instead of
@@ -171,6 +171,10 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
   const [started, setStarted] = useState(false)
   const [mrByIid, setMrByIid] = useState<Map<number, Mr>>(() => new Map())
   const [viewMrIid, setViewMrIid] = useState<number | null>(null)
+  const [spawnText, setSpawnText] = useState('')
+  const [spawnEngine, setSpawnEngine] = useState<Engine>('codex')
+  const [spawning, setSpawning] = useState(false)
+  const [spawnMsg, setSpawnMsg] = useState('')
 
   const loadTickets = () => window.gt.tickets.list().then(setTickets)
   useEffect(() => {
@@ -182,6 +186,33 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
       .then((r) => setMrByIid(new Map((r.mrs || []).map((m) => [m.iid, m]))))
       .catch(() => setMrByIid(new Map()))
   }, [ctx.sessionId])
+
+  // Refresh the list when a ticket is filed/closed anywhere (e.g. the spawn
+  // agent finishing) so a spawned ticket appears without a manual reload.
+  useEffect(() => {
+    const off = window.gt.activity.onEvent((ev) => {
+      if (ev.kind === 'ticket-filed' || ev.kind === 'ticket-closed') loadTickets()
+    })
+    return off
+  }, [])
+
+  const doSpawn = async () => {
+    const text = spawnText.trim()
+    if (!text || spawning) return
+    setSpawning(true)
+    try {
+      const r = await window.gt.tickets.spawn(text, spawnEngine)
+      if (r && 'error' in r) {
+        setSpawnMsg(`couldn't start: ${r.error}`)
+      } else {
+        setSpawnText('')
+        setSpawnMsg(`${spawnEngine} is filing the ticket · watch the Agents tab — it'll appear here when done`)
+        setTimeout(() => setSpawnMsg(''), 7000)
+      }
+    } finally {
+      setSpawning(false)
+    }
+  }
 
   const filtered = (tickets || []).filter((t) => {
     if (hitlOnly && !t.hitl) return false
@@ -269,6 +300,42 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
           </button>
         )}
       </div>
+
+      {/* spawn-a-ticket bar: type a request, an agent files it to the backlog */}
+      {!hitlOnly && (
+        <div className="shrink-0 border-b border-[var(--gt-border)] bg-[var(--gt-panel)]/30 px-4 py-2">
+          <div className="flex items-start gap-2">
+            <Bot size={15} strokeWidth={2} className="mt-1.5 shrink-0 text-[var(--gt-accent-2)]" />
+            <textarea
+              value={spawnText}
+              onChange={(e) => setSpawnText(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') doSpawn()
+              }}
+              rows={1}
+              placeholder="Describe a ticket — an agent files it to the backlog (⌘↵)"
+              className="min-h-[32px] flex-1 resize-y rounded-lg border border-[var(--gt-border)] bg-black/30 px-2 py-1.5 text-[12px] text-zinc-200 outline-none focus:border-[var(--gt-accent)]/60"
+            />
+            <select
+              value={spawnEngine}
+              onChange={(e) => setSpawnEngine(e.target.value as Engine)}
+              className="mt-0.5 cursor-pointer rounded-lg border border-[var(--gt-border)] bg-black/30 px-1.5 py-1.5 text-[12px] text-zinc-300 outline-none focus:border-[var(--gt-accent)]/60"
+            >
+              <option value="codex">codex</option>
+              <option value="claude">claude</option>
+            </select>
+            <button
+              onClick={doSpawn}
+              disabled={!spawnText.trim() || spawning}
+              className="mt-0.5 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gt-accent)] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
+            >
+              <Bot size={13} strokeWidth={2} />
+              {spawning ? 'Filing…' : 'File ticket'}
+            </button>
+          </div>
+          {spawnMsg && <div className="mt-1 pl-7 text-[11px] text-[var(--gt-green)]">{spawnMsg}</div>}
+        </div>
+      )}
 
       {/* master-detail */}
       <div className="flex min-h-0 flex-1">

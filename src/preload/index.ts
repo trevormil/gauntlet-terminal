@@ -132,6 +132,7 @@ const gt = {
     create: (input: unknown) => ipcRenderer.invoke('tickets:create', input),
     update: (slug: string, patch: { status?: string; priority?: string }) =>
       ipcRenderer.invoke('tickets:update', slug, patch),
+    spawn: (text: string, engine: string) => ipcRenderer.invoke('tickets:spawn', text, engine),
   },
   projectSessions: () => ipcRenderer.invoke('sessions:project-list'),
   getProjectSession: (slug: string) => ipcRenderer.invoke('sessions:project-get', slug),
