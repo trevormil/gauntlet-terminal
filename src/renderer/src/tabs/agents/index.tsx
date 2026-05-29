@@ -521,6 +521,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                         <div className="flex items-center gap-1.5">
                           <span className="text-[13px] font-semibold text-zinc-100">{a.title}</span>
                           {a.source && <Badge tone={SOURCE[a.source].tone}>{SOURCE[a.source].label}</Badge>}
+                          {a.hasScript && <Badge tone="blue">sh</Badge>}
                         </div>
                         {a.description && (
                           <div className="text-[11.5px] leading-snug text-zinc-500">{a.description}</div>

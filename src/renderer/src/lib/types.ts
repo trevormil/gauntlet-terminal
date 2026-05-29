@@ -177,6 +177,7 @@ export type Agent = {
   model?: string
   inPlace?: boolean
   source?: 'default' | 'override' | 'repo' | 'global'
+  hasScript?: boolean
 }
 export type Persona = { id: string; title: string; description: string; icon?: string; prompt: string }
 export type PipelineId = 'single' | 'review' | 'review-iterate'

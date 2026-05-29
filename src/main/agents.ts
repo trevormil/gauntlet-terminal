@@ -41,6 +41,10 @@ export type Agent = {
   // like "gpt-5-codex", "gpt-5", "o4-mini"). undefined → engine default. Lets
   // lightweight agents (health, deps audit) avoid burning the biggest model.
   model?: string
+  // Computed by readAgents: true when .agents/<id>.sh (or the global script)
+  // exists. The runner branches on this — UI uses it for a "sh" badge so
+  // operators can see at a glance which agents are script-first.
+  hasScript?: boolean
   // Run directly in the repo (no fresh worktree) — e.g. orchestrators like
   // /factory that manage their own worktrees internally, or quick additive ops.
   inPlace?: boolean
@@ -249,7 +253,7 @@ export function readAgents(repoRoot: string): Agent[] {
     if (layers.has('repo')) source = layers.has('default') || layers.has('global') ? 'override' : 'repo'
     else if (layers.has('global')) source = layers.has('default') ? 'override' : 'global'
     else source = 'default'
-    out.push({ ...agent, source })
+    out.push({ ...agent, source, hasScript: !!locateScript(repoRoot, agent.id) })
   }
   return out
 }
