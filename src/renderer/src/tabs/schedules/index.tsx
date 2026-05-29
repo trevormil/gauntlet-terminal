@@ -303,6 +303,8 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
   const [repo, setRepo] = useState('') // '' = all repos
   const [allRuns, setAllRuns] = useState<CronRun[] | null>(null)
   const [disabled, setDisabledIds] = useState<Set<string>>(new Set())
+  // Lazy-loaded bash bodies, keyed by agentId. Same cache pattern as the Agents tab.
+  const [scriptByAgent, setScriptByAgent] = useState<Record<string, { path: string; body: string } | null>>({})
 
   const reload = () => window.gt.schedules.list().then(setSchedules)
   const reloadRuns = () => window.gt.schedules.runs().then(setAllRuns)
@@ -348,6 +350,14 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
     setExpanded(id)
     setLog(null)
     setRuns(await window.gt.schedules.runs(id))
+    // Lazy-fetch the script body for the schedule's agent so it renders above
+    // the run history. Cache including null so we don't re-hit IPC.
+    const sched = (schedules || []).find((s) => s.id === id)
+    if (sched && !(sched.agentId in scriptByAgent)) {
+      window.gt.agents
+        .script(sched.agentId)
+        .then((r) => setScriptByAgent((m) => ({ ...m, [sched.agentId]: r })))
+    }
   }
 
   const save = async (agentId: string, engine: Engine, spec: ScheduleSpec, model?: string) => {
@@ -588,6 +598,42 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
 
               {expanded === s.id && (
                 <div className="mt-2 space-y-1 border-t border-[var(--gt-border)]/50 pt-2">
+                  {/* Script preview — show the bash body the runner will exec, or the
+                      legacy prompt fallback if no .agents/<id>.sh exists yet. Helps
+                      the operator confirm what's about to fire before opening logs. */}
+                  {scriptByAgent[s.agentId] !== undefined && (
+                    <div className="mb-2 space-y-1">
+                      <div className="flex items-center gap-1.5 px-1 text-[10px]">
+                        {scriptByAgent[s.agentId] ? (
+                          <>
+                            <Badge tone="blue">bash script</Badge>
+                            <span className="min-w-0 flex-1 truncate font-mono text-zinc-600">
+                              {scriptByAgent[s.agentId]!.path}
+                            </span>
+                            <button
+                              onClick={() => window.gt.openInEditor(scriptByAgent[s.agentId]!.path)}
+                              className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-1.5 py-0.5 text-zinc-400 hover:border-[var(--gt-accent)]/60 hover:text-zinc-200"
+                              title="Open in your configured editor"
+                            >
+                              edit
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <Badge tone="mute">prompt</Badge>
+                            <span className="text-zinc-700">
+                              legacy prompt — runs as a single claude/codex call
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      {scriptByAgent[s.agentId] && (
+                        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-[#0c0c11] p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
+                          {scriptByAgent[s.agentId]!.body}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                   {runs.length === 0 ? (
                     <div className="py-2 text-center text-[11px] text-zinc-600">
                       No runs yet. Try “run now” above to fire one.

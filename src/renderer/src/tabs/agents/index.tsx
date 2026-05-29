@@ -126,7 +126,39 @@ function AgentDesigner({
         </div>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[10.5px] uppercase tracking-wider text-zinc-500">Description</span>
+          <div className="flex items-end justify-between">
+            <span className="text-[10.5px] uppercase tracking-wider text-zinc-500">Description</span>
+            {/* Templates — single click prefills the textarea with a starting
+                description that nudges the designer toward a specific shape. */}
+            <div className="flex items-center gap-1 text-[10px] text-zinc-600">
+              <span>start from:</span>
+              {(
+                [
+                  {
+                    label: 'precheck + escalate',
+                    text:
+                      'A scheduled agent that runs a deterministic precheck first (tsc, tests, lint) and only escalates to an LLM when something fails. On failure, diagnose the failures and apply a small surgical fix if safe, else file a backlog ticket. Default model: haiku.',
+                  },
+                  {
+                    label: 'single LLM call',
+                    text: 'A simple agent that runs a single claude prompt to … (fill in the task). Opens a PR with the result. Default model: sonnet.',
+                  },
+                  {
+                    label: 'pure deterministic',
+                    text: 'A pure shell agent (no LLM) that runs … (fill in the check), files a HITL via terminal-cli only if a probe fails, and emits an activity event with the summary on success.',
+                  },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.label}
+                  onClick={() => setText(t.text)}
+                  className="rounded-md border border-[var(--gt-border)] px-1.5 py-0.5 hover:border-[var(--gt-accent)]/60 hover:text-zinc-300"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
