@@ -4,6 +4,10 @@
   <p><strong>Your coding agent, with a cockpit.</strong></p>
 </div>
 
+<p align="center">
+  <img src="docs/screenshot.png" width="900" alt="TerMinal — the terminal tab with the live cockpit sidebar" />
+</p>
+
 An alt-terminal for [Claude Code](https://claude.com/claude-code). One window
 hosts **many Claude sessions** as top tabs — each runs the real `claude` CLI in
 its own PTY and carries its own **cockpit**: a sidebar of live telemetry for
