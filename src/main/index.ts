@@ -37,6 +37,8 @@ import {
   patchSettings,
   telegramControlEnabled,
   resolvedProjectsDir,
+  resolvedEditorApp,
+  resolvedBrowserApp,
   enginePath,
   type SettingsPatch,
 } from './settings'
@@ -618,18 +620,28 @@ ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(cur().cwd),
 ipcMain.handle('mrs:ci', (_e, iid: number) => getMrCi(repoRootOf(cur().cwd), iid))
 ipcMain.handle('mrs:merge', (_e, iid: number) => mergeMr(repoRootOf(cur().cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
-// Hand a URL to the real Brave (full extensions/wallet). Falls back to the
-// default browser if Brave isn't installed.
-ipcMain.handle('open:in-brave', (_e, url: string) => {
+// Hand a target to a configured external app via `open -a <App>` (robust, no
+// PATH/CLI dependency), falling back to the OS default if the app isn't there.
+function openInApp(appName: string, target: string, fallback: () => void) {
   try {
-    const p = cpSpawn('open', ['-a', 'Brave Browser', url], { stdio: 'ignore' })
-    p.on('error', () => shell.openExternal(url))
+    const p = cpSpawn('open', ['-a', appName, target], { stdio: 'ignore' })
+    p.on('error', fallback)
     p.on('exit', (code) => {
-      if (code !== 0) shell.openExternal(url)
+      if (code !== 0) fallback()
     })
   } catch {
-    shell.openExternal(url)
+    fallback()
   }
+}
+// "Open in browser" — the configured browser (default Brave) with its extensions/wallet.
+ipcMain.handle('open:in-browser', (_e, url: string) =>
+  openInApp(resolvedBrowserApp(), url, () => shell.openExternal(url)),
+)
+// "Open in editor" — the configured editor (default Cursor). Opens a path; defaults
+// to the active session's repo root.
+ipcMain.handle('open:in-editor', (_e, path?: string) => {
+  const target = path || repoRootOf(cur().cwd) || cur().cwd || homedir()
+  openInApp(resolvedEditorApp(), target, () => shell.openPath(target))
 })
 ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
 ipcMain.handle('clipboard:read', () => clipboard.readText())

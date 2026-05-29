@@ -34,6 +34,11 @@ function BrowserTab(_props: { ctx: TabContext }) {
   const [loading, setLoading] = useState(false)
   const [canBack, setCanBack] = useState(false)
   const [canFwd, setCanFwd] = useState(false)
+  const [browserName, setBrowserName] = useState('Brave Browser')
+
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setBrowserName(s.apps?.browser || 'Brave Browser'))
+  }, [])
 
   useEffect(() => {
     const host = hostRef.current
@@ -127,12 +132,12 @@ function BrowserTab(_props: { ctx: TabContext }) {
           />
         </form>
         <button
-          onClick={() => window.gt.openInBrave(addr)}
-          title="Open this page in Brave (your wallet + extensions)"
+          onClick={() => window.gt.openInBrowser(addr)}
+          title={`Open this page in ${browserName} (your wallet + extensions)`}
           className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60 hover:text-white"
         >
           <span className="text-[var(--gt-accent-2)]">◆</span>
-          Open in Brave
+          Open in {browserName.replace(/ Browser$/, '')}
         </button>
       </div>
       <div ref={hostRef} className="min-h-0 flex-1" />

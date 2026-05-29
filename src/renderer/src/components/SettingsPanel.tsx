@@ -75,6 +75,14 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
   }, [])
 
   const save = async (patch: SettingsPatch) => setS(await window.gt.settings.patch(patch))
+  const appOptions = (detected: string[] | undefined, fallback: string[], current: string) => {
+    const list = [...new Set([...(detected?.length ? detected : fallback), ...(current ? [current] : [])])]
+    return list.map((a) => (
+      <option key={a} value={a} className="bg-[var(--gt-panel)]">
+        {a}
+      </option>
+    ))
+  }
   const browse = async (key: 'projectsDir') => {
     const d = await window.gt.pickDir()
     if (d) save({ [key]: d })
@@ -227,6 +235,35 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
                 <Readiness ok={env.glab.found && env.glab.authed} name="glab" hint={env.glab.found ? (env.glab.authed ? `authenticated${env.glab.authHost ? ` (${env.glab.authHost})` : ''}` : 'installed — run `glab auth login`') : 'not installed — `brew install glab`'} />
               </div>
             )}
+          </Section>
+
+          {/* External apps */}
+          <Section
+            title="External apps"
+            desc="Which app the Files tab's 'Open in editor' and the Browser tab's 'Open in browser' hand off to. Runs `open -a <app>` (works for any installed macOS app)."
+          >
+            <div className="flex flex-wrap gap-5">
+              <label className="flex items-center gap-2 text-[12px] text-zinc-400">
+                Editor
+                <select
+                  value={s.apps.editor || 'Cursor'}
+                  onChange={(e) => save({ apps: { editor: e.target.value } })}
+                  className="rounded-md border border-[var(--gt-border)] bg-black/30 px-2 py-1 text-[12px] text-zinc-200 outline-none"
+                >
+                  {appOptions(env?.apps.editors, ['Cursor', 'Visual Studio Code'], s.apps.editor)}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-zinc-400">
+                Browser
+                <select
+                  value={s.apps.browser || 'Brave Browser'}
+                  onChange={(e) => save({ apps: { browser: e.target.value } })}
+                  className="rounded-md border border-[var(--gt-border)] bg-black/30 px-2 py-1 text-[12px] text-zinc-200 outline-none"
+                >
+                  {appOptions(env?.apps.browsers, ['Brave Browser'], s.apps.browser)}
+                </select>
+              </label>
+            </div>
           </Section>
 
           {/* Telegram */}

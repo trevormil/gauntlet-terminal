@@ -82,6 +82,22 @@ export type EnvDetect = {
   gh: { found: boolean; path: string; authed: boolean; authHost: string }
   glab: { found: boolean; path: string; authed: boolean; authHost: string }
   tgScripts: boolean
+  apps: { editors: string[]; browsers: string[] }
+}
+
+// Known external apps to offer for the "Open in editor/browser" handoffs.
+// Detected by .app bundle name so `open -a <name>` works without a CLI/PATH.
+const EDITOR_APPS = ['Cursor', 'Visual Studio Code', 'VSCodium', 'Zed', 'Windsurf', 'Sublime Text']
+const BROWSER_APPS = ['Brave Browser', 'Arc', 'Google Chrome', 'Firefox', 'Microsoft Edge', 'Safari']
+function appInstalled(name: string): boolean {
+  return (
+    existsSync(join('/Applications', `${name}.app`)) ||
+    existsSync(join(homedir(), 'Applications', `${name}.app`))
+  )
+}
+/** Installed editor/browser .app bundles (for the Settings/onboarding pickers). */
+export function detectApps(): { editors: string[]; browsers: string[] } {
+  return { editors: EDITOR_APPS.filter(appInstalled), browsers: BROWSER_APPS.filter(appInstalled) }
 }
 
 /** Probe which engines/forge CLIs are installed + (for forges) authenticated. */
@@ -101,6 +117,7 @@ export async function detectEnv(): Promise<EnvDetect> {
     gh: { found: !!gh, path: gh, authed: ghAuth.authed, authHost: ghAuth.host },
     glab: { found: !!glab, path: glab, authed: glabAuth.authed, authHost: glabAuth.host },
     tgScripts: existsSync(join(homedir(), '.claude', 'bin', 'telegram-notify.sh')),
+    apps: detectApps(),
   }
 }
 

@@ -8,6 +8,7 @@ import {
   Search,
   FilePlus,
   FolderPlus,
+  ExternalLink,
   X,
 } from 'lucide-react'
 import { langs } from '@uiw/codemirror-extensions-langs'
@@ -150,6 +151,7 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [pv, setPv] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [editorName, setEditorName] = useState('Cursor')
 
   const activeFile = open.find((f) => f.path === activePath) || null
   const bump = () => setVersion((v) => v + 1)
@@ -157,6 +159,9 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
   useEffect(() => {
     window.gt.files.list('').then(setRoots)
   }, [ctx.repoRoot, version])
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setEditorName(s.apps?.editor || 'Cursor'))
+  }, [])
 
   const patch = (path: string, p: Partial<OpenFile>) =>
     setOpen((o) => o.map((f) => (f.path === path ? { ...f, ...p } : f)))
@@ -388,9 +393,19 @@ function FilesTab({ ctx }: { ctx: TabContext }) {
                   <FolderPlus size={12} strokeWidth={2} />
                   Folder
                 </button>
-                <span className="ml-auto truncate font-mono text-[10px] text-zinc-600">
-                  in&nbsp;/{selectedDir}
-                </span>
+                <span className="truncate font-mono text-[10px] text-zinc-600">in&nbsp;/{selectedDir}</span>
+                <button
+                  onClick={() =>
+                    window.gt.openInEditor(
+                      activePath ? `${ctx.repoRoot}/${activePath}` : ctx.repoRoot || undefined,
+                    )
+                  }
+                  title={`Open ${activePath ? 'this file' : 'this repo'} in ${editorName}`}
+                  className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10 hover:text-zinc-200"
+                >
+                  <ExternalLink size={12} strokeWidth={2} />
+                  {editorName}
+                </button>
               </div>
 
               {prompt && (

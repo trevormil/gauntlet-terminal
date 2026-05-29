@@ -16,6 +16,12 @@ export type TelegramCfg = {
   botToken: string // BotFather token → native Bot API (else falls back to scripts)
   chatId: string // the single authorized chat (auth boundary)
 }
+// External-app handoffs: macOS app names used with `open -a <name>` — robust
+// (no PATH/CLI dependency). '' → the built-in default.
+export type AppsCfg = {
+  editor: string // e.g. "Cursor" / "Visual Studio Code" — "Open in editor"
+  browser: string // e.g. "Brave Browser" — "Open in browser"
+}
 export type Settings = {
   onboarded: boolean
   projectsDir: string // '' → resolved to your home dir
@@ -24,15 +30,20 @@ export type Settings = {
   defaultEngine: EngineId
   forge: ForgePref // 'auto' picks gh/glab per-repo from the remote host
   telegram: TelegramCfg
+  apps: AppsCfg
   harnessDir: string // optional cross-repo review-artifact store
   templateRepo: string // scaffold source
 }
 
-// A patch may carry partial nested telegram/engines without losing siblings.
-export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines'>> & {
+// A patch may carry partial nested telegram/engines/apps without losing siblings.
+export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines' | 'apps'>> & {
   telegram?: Partial<TelegramCfg>
   engines?: Partial<Record<EngineId, Partial<EngineCfg>>>
+  apps?: Partial<AppsCfg>
 }
+
+const DEFAULT_EDITOR = 'Cursor'
+const DEFAULT_BROWSER = 'Brave Browser'
 
 const DEFAULT_TEMPLATE_REPO = 'https://github.com/trevormil/project-template'
 
@@ -45,6 +56,7 @@ export function defaultSettings(): Settings {
     defaultEngine: 'codex',
     forge: 'auto',
     telegram: { notify: false, control: false, botToken: '', chatId: '' },
+    apps: { editor: '', browser: '' },
     harnessDir: '',
     templateRepo: '',
   }
@@ -79,6 +91,10 @@ export function migrate(raw: unknown): Settings {
       if (typeof p === 'string') s.engines[e] = { path: p }
     }
   }
+  if (r.apps && typeof r.apps === 'object') {
+    if (typeof r.apps.editor === 'string') s.apps.editor = r.apps.editor
+    if (typeof r.apps.browser === 'string') s.apps.browser = r.apps.browser
+  }
   return s
 }
 
@@ -102,6 +118,7 @@ export function patchSettings(patch: SettingsPatch): Settings {
     ...cur,
     ...patch,
     telegram: { ...cur.telegram, ...(patch.telegram || {}) },
+    apps: { ...cur.apps, ...(patch.apps || {}) },
     engines: {
       codex: { ...cur.engines.codex, ...(patch.engines?.codex || {}) },
       claude: { ...cur.engines.claude, ...(patch.engines?.claude || {}) },
@@ -152,3 +169,7 @@ export function enginePath(engine: EngineId): string {
 
 export const telegramNotifyEnabled = () => readSettings().telegram.notify
 export const telegramControlEnabled = () => readSettings().telegram.control
+
+/** macOS app name for the "Open in editor" / "Open in browser" handoffs. */
+export const resolvedEditorApp = () => readSettings().apps.editor || DEFAULT_EDITOR
+export const resolvedBrowserApp = () => readSettings().apps.browser || DEFAULT_BROWSER

@@ -123,6 +123,7 @@ export type Engine = 'codex' | 'claude'
 export type EngineCfg = { path: string }
 export type ForgePref = 'auto' | 'github' | 'gitlab'
 export type TelegramCfg = { notify: boolean; control: boolean; botToken: string; chatId: string }
+export type AppsCfg = { editor: string; browser: string }
 export type Settings = {
   onboarded: boolean
   projectsDir: string
@@ -131,12 +132,14 @@ export type Settings = {
   defaultEngine: Engine
   forge: ForgePref
   telegram: TelegramCfg
+  apps: AppsCfg
   harnessDir: string
   templateRepo: string
 }
-export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines'>> & {
+export type SettingsPatch = Partial<Omit<Settings, 'telegram' | 'engines' | 'apps'>> & {
   telegram?: Partial<TelegramCfg>
   engines?: Partial<Record<Engine, Partial<EngineCfg>>>
+  apps?: Partial<AppsCfg>
 }
 
 /** Tool/engine readiness probed by the main process (env:detect). */
@@ -146,6 +149,7 @@ export type EnvDetect = {
   gh: { found: boolean; path: string; authed: boolean; authHost: string }
   glab: { found: boolean; path: string; authed: boolean; authHost: string }
   tgScripts: boolean
+  apps: { editors: string[]; browsers: string[] }
 }
 
 export type Agent = {
@@ -464,7 +468,8 @@ export type GtApi = {
   getMrCi: (iid: number) => Promise<CiInfo | null>
   mergeMr: (iid: number) => Promise<{ ok: boolean; error?: string }>
   openExternal: (url: string) => Promise<void>
-  openInBrave: (url: string) => Promise<void>
+  openInBrowser: (url: string) => Promise<void>
+  openInEditor: (path?: string) => Promise<void>
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
   notes: {

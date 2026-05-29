@@ -150,7 +150,8 @@ const gt = {
   getMrCi: (iid: number) => ipcRenderer.invoke('mrs:ci', iid),
   mergeMr: (iid: number) => ipcRenderer.invoke('mrs:merge', iid),
   openExternal: (url: string) => ipcRenderer.invoke('open:external', url),
-  openInBrave: (url: string) => ipcRenderer.invoke('open:in-brave', url),
+  openInBrowser: (url: string) => ipcRenderer.invoke('open:in-browser', url),
+  openInEditor: (path?: string) => ipcRenderer.invoke('open:in-editor', path),
   clipboardWrite: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   clipboardRead: (): Promise<string> => ipcRenderer.invoke('clipboard:read'),
 
