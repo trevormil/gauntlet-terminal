@@ -2,23 +2,27 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join, relative, basename, sep } from 'node:path'
 
 // GitBook-style docs surface for a repo. Lists every markdown file under
-// docs/ + a root CHANGELOG.md, grouped by category for the renderer's sidebar.
+// docs/ + reports/ + a root CHANGELOG.md, grouped by category for the
+// renderer's sidebar.
 //
 // Categories (per project-template convention):
 //   - changelog   — root CHANGELOG.md only (pinned)
-//   - maintainer  — docs/maintainer/**.md
-//   - developer   — docs/developer/**.md
-//   - personal    — docs/personal/**.md
+//   - maintainer  — docs/maintainer/**.md (auto-docs agent)
+//   - developer   — docs/developer/**.md  (auto-docs agent)
+//   - personal    — docs/personal/**.md   (auto-docs agent)
+//   - reports     — reports/<kind>/**.md  (scheduled-agent run artifacts;
+//                   each kind sub-grouped in the sidebar via DocEntry.subgroup)
 //   - other       — everything else under docs/**.md (human-authored runbooks,
 //                   ADRs, architecture.md at root, etc.)
 
-export type DocCategory = 'changelog' | 'maintainer' | 'developer' | 'personal' | 'other'
+export type DocCategory = 'changelog' | 'maintainer' | 'developer' | 'personal' | 'reports' | 'other'
 
 export type DocEntry = {
   path: string // relative to repoRoot, forward slashes
   title: string // first H1 or filename basename
   category: DocCategory
   managedBy?: string // agent name if a "managed by:" header is present
+  subgroup?: string // for 'reports': the agent name (second path segment)
 }
 
 export type DocsTree = {
@@ -30,11 +34,12 @@ const CATEGORY_LABEL: Record<DocCategory, string> = {
   maintainer: 'Maintainer',
   developer: 'Developer',
   personal: 'Personal',
+  reports: 'Reports',
   other: 'Other',
 }
 
 // Order in the sidebar.
-const CATEGORY_ORDER: DocCategory[] = ['changelog', 'maintainer', 'developer', 'personal', 'other']
+const CATEGORY_ORDER: DocCategory[] = ['changelog', 'maintainer', 'developer', 'personal', 'reports', 'other']
 
 const MARKDOWN_RE = /\.(md|mdx|markdown)$/i
 const MANAGED_BY_RE = /<!--\s*managed by:\s*([a-z0-9-]+)/i
@@ -51,7 +56,14 @@ function categorize(rel: string): DocCategory {
   if (norm.startsWith('docs/maintainer/')) return 'maintainer'
   if (norm.startsWith('docs/developer/')) return 'developer'
   if (norm.startsWith('docs/personal/')) return 'personal'
+  if (norm.startsWith('reports/')) return 'reports'
   return 'other'
+}
+
+function reportSubgroup(rel: string): string | undefined {
+  const parts = rel.split(sep).join('/').split('/')
+  // reports/<kind>/<file>.md → "<kind>"
+  return parts.length >= 3 && parts[0] === 'reports' ? parts[1] : undefined
 }
 
 function walk(root: string, dir: string, out: string[]): void {
@@ -81,6 +93,8 @@ export function listDocs(repoRoot: string): DocsTree {
   const paths: string[] = []
   const docsDir = join(repoRoot, 'docs')
   if (existsSync(docsDir) && statSync(docsDir).isDirectory()) walk(repoRoot, docsDir, paths)
+  const reportsDir = join(repoRoot, 'reports')
+  if (existsSync(reportsDir) && statSync(reportsDir).isDirectory()) walk(repoRoot, reportsDir, paths)
   const changelog = join(repoRoot, 'CHANGELOG.md')
   if (existsSync(changelog)) paths.push('CHANGELOG.md')
 
@@ -94,11 +108,13 @@ export function listDocs(repoRoot: string): DocsTree {
       /* skip */
     }
     const managed = content.match(MANAGED_BY_RE)
+    const category = categorize(norm)
     entries.push({
       path: norm,
       title: readTitle(content, basename(norm, '.md')),
-      category: categorize(norm),
+      category,
       managedBy: managed ? managed[1] : undefined,
+      subgroup: category === 'reports' ? reportSubgroup(norm) : undefined,
     })
   }
 

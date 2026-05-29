@@ -1,8 +1,57 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookText, FileText, Sparkles } from 'lucide-react'
+import { BookText, FileText, Sparkles, ChevronDown, ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import { Markdown } from '../../components/Markdown'
 import type { Tab, TabContext, DocsTree, DocEntry, DocCategory } from '../../lib/types'
+
+// A node in the per-category folder tree (GitHub-style).
+type TreeNode =
+  | { type: 'file'; key: string; entry: DocEntry }
+  | { type: 'dir'; key: string; name: string; children: TreeNode[] }
+
+const CATEGORY_PREFIX: Partial<Record<DocCategory, string>> = {
+  maintainer: 'docs/maintainer/',
+  developer: 'docs/developer/',
+  personal: 'docs/personal/',
+  reports: 'reports/',
+  other: 'docs/',
+}
+
+function buildTree(items: DocEntry[], stripPrefix = ''): TreeNode[] {
+  // Sort items by path so siblings come out in stable order.
+  const sorted = [...items].sort((a, b) => a.path.localeCompare(b.path))
+  // Build a synthetic root and walk each path into it.
+  type DirAccum = { type: 'dir'; key: string; name: string; children: TreeNode[] }
+  const root: DirAccum = { type: 'dir', key: '', name: '', children: [] }
+  for (const e of sorted) {
+    const trimmed = stripPrefix && e.path.startsWith(stripPrefix) ? e.path.slice(stripPrefix.length) : e.path
+    const parts = trimmed.split('/').filter(Boolean)
+    let cur: DirAccum = root
+    for (let i = 0; i < parts.length - 1; i++) {
+      const name = parts[i]
+      const dirKey = cur.key ? `${cur.key}/${name}` : name
+      let next = cur.children.find((c): c is DirAccum => c.type === 'dir' && c.name === name)
+      if (!next) {
+        next = { type: 'dir', key: dirKey, name, children: [] }
+        cur.children.push(next)
+      }
+      cur = next
+    }
+    cur.children.push({ type: 'file', key: e.path, entry: e })
+  }
+  // Within each dir put folders first, then files (matches GitHub).
+  const sortDir = (n: DirAccum): void => {
+    n.children.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+      const an = a.type === 'dir' ? a.name : (a.entry.title || a.entry.path)
+      const bn = b.type === 'dir' ? b.name : (b.entry.title || b.entry.path)
+      return an.localeCompare(bn)
+    })
+    for (const c of n.children) if (c.type === 'dir') sortDir(c as DirAccum)
+  }
+  sortDir(root)
+  return root.children
+}
 
 // GitBook-style Docs tab. Left: tree nav grouped by category (Changelog,
 // Maintainer, Developer, Personal, Other). Right: rendered markdown. The
@@ -14,8 +63,10 @@ const CATEGORY_HINT: Record<DocCategory, string> = {
   maintainer: 'maintained by the auto-docs agent — contributor reference',
   developer: 'maintained by the auto-docs agent — public API + integration',
   personal: 'maintained by the auto-docs agent — what shipped + what is in flight',
+  reports: 'scheduled-agent run artifacts, grouped by kind',
   other: 'human-authored (handbook, runbooks, ADRs, architecture overview)',
 }
+
 
 function categoryStorageKey(repoRoot: string) {
   return `gt.docs.lastPath.${repoRoot}`
@@ -26,6 +77,13 @@ function DocsTab({ ctx }: { ctx: TabContext }) {
   const [selected, setSelected] = useState<DocEntry | null>(null)
   const [body, setBody] = useState('')
   const [query, setQuery] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const toggleDir = (key: string) =>
+    setCollapsed((c) => {
+      const n = new Set(c)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
 
   // Load tree on mount + when repo changes.
   useEffect(() => {
@@ -113,23 +171,17 @@ function DocsTab({ ctx }: { ctx: TabContext }) {
           ) : (
             filtered.categories
               .filter((c) => c.items.length > 0)
-              .map((c) => (
-                <div key={c.id} className="mb-3">
-                  <div
-                    title={CATEGORY_HINT[c.id]}
-                    className="mb-1 flex items-center gap-1.5 px-2 text-[9.5px] font-bold uppercase tracking-[0.16em] text-zinc-600"
-                  >
-                    {c.label}
-                    <span className="text-zinc-700">·</span>
-                    <span className="text-zinc-700">{c.items.length}</span>
-                  </div>
-                  {c.items.map((e) => {
-                    const on = selected?.path === e.path
+              .map((c) => {
+                const trees = buildTree(c.items, CATEGORY_PREFIX[c.id] ?? '')
+                const renderNode = (n: TreeNode, depth: number) => {
+                  if (n.type === 'file') {
+                    const on = selected?.path === n.entry.path
                     return (
                       <button
-                        key={e.path}
-                        onClick={() => setSelected(e)}
-                        className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] transition-colors ${
+                        key={n.key}
+                        onClick={() => setSelected(n.entry)}
+                        style={{ paddingLeft: 8 + depth * 12 }}
+                        className={`group flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-[12px] transition-colors ${
                           on
                             ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
                             : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
@@ -140,20 +192,57 @@ function DocsTab({ ctx }: { ctx: TabContext }) {
                           strokeWidth={2}
                           className={on ? 'text-[var(--gt-accent-light)]' : 'text-zinc-600'}
                         />
-                        <span className="min-w-0 flex-1 truncate">{e.title}</span>
-                        {e.managedBy && (
+                        <span className="min-w-0 flex-1 truncate">{n.entry.title}</span>
+                        {n.entry.managedBy && (
                           <Sparkles
                             size={10}
                             strokeWidth={2}
                             className="shrink-0 text-[var(--gt-accent-light)] opacity-70"
-                            aria-label={`managed by ${e.managedBy}`}
+                            aria-label={`managed by ${n.entry.managedBy}`}
                           />
                         )}
                       </button>
                     )
-                  })}
-                </div>
-              ))
+                  }
+                  const dirKey = `${c.id}:${n.key}`
+                  const isCollapsed = collapsed.has(dirKey)
+                  return (
+                    <div key={n.key}>
+                      <button
+                        onClick={() => toggleDir(dirKey)}
+                        style={{ paddingLeft: 8 + depth * 12 }}
+                        className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-[12px] text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight size={11} strokeWidth={2} className="text-zinc-600" />
+                        ) : (
+                          <ChevronDown size={11} strokeWidth={2} className="text-zinc-600" />
+                        )}
+                        {isCollapsed ? (
+                          <Folder size={11} strokeWidth={2} className="text-zinc-600" />
+                        ) : (
+                          <FolderOpen size={11} strokeWidth={2} className="text-[var(--gt-accent-light)]/80" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{n.name}</span>
+                      </button>
+                      {!isCollapsed && n.children.map((child) => renderNode(child, depth + 1))}
+                    </div>
+                  )
+                }
+                return (
+                  <div key={c.id} className="mb-3">
+                    <div
+                      title={CATEGORY_HINT[c.id]}
+                      className="mb-1 flex items-center gap-1.5 px-2 text-[9.5px] font-bold uppercase tracking-[0.16em] text-zinc-600"
+                    >
+                      {c.label}
+                      <span className="text-zinc-700">·</span>
+                      <span className="text-zinc-700">{c.items.length}</span>
+                    </div>
+                    {trees.map((n) => renderNode(n, 0))}
+                  </div>
+                )
+              })
           )}
         </nav>
       </aside>

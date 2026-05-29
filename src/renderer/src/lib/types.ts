@@ -120,12 +120,13 @@ export type NewTicket = { title: string; type: string; priority: string; status:
 
 export type Snippet = { id: string; title: string; body: string }
 
-export type DocCategory = 'changelog' | 'maintainer' | 'developer' | 'personal' | 'other'
+export type DocCategory = 'changelog' | 'maintainer' | 'developer' | 'personal' | 'reports' | 'other'
 export type DocEntry = {
   path: string
   title: string
   category: DocCategory
   managedBy?: string
+  subgroup?: string // for 'reports': the agent name (second path segment)
 }
 export type DocsTree = {
   categories: { id: DocCategory; label: string; items: DocEntry[] }[]
