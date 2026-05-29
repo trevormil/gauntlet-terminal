@@ -230,6 +230,14 @@ export type Mr = {
   review: Review | null
 }
 
+export type SkillScope = 'project' | 'personal' | 'plugin'
+export type SkillInfo = {
+  name: string
+  description: string
+  scope: SkillScope
+  namespace?: string
+}
+
 export type CiJob = { id: number; name: string; stage: string; status: string; webUrl: string }
 export type CiInfo = { status: string; webUrl: string; jobs: CiJob[] }
 export type MrListResult = { mrs: Mr[]; error?: string }
@@ -402,6 +410,7 @@ export type GtApi = {
   }
   projectSessions: () => Promise<ProjectSession[]>
   getProjectSession: (slug: string) => Promise<ProjectSession | null>
+  listSkills: () => Promise<SkillInfo[]>
   listMrs: () => Promise<MrListResult>
   getMr: (iid: number) => Promise<MrDetail | null>
   getMrDiff: (iid: number) => Promise<string>

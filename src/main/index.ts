@@ -24,6 +24,7 @@ import { listCommandWidgets, runCommand } from './widgets'
 import { repoRootOf, repoForCwd, gitStatus } from './repo'
 import { listTickets, getTicket, createTicket, updateTicket, type NewTicket } from './backlog'
 import { listMrs, getMr, getMrDiff, getMrCi, mergeMr, mrSummary } from './mrs'
+import { listSkills } from './skills'
 import { forgeFor } from './forge'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
@@ -524,6 +525,7 @@ ipcMain.handle('tickets:create', (_e, input: NewTicket) => {
 ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; priority?: string }) =>
   updateTicket(repoRootOf(cur().cwd), slug, patch),
 )
+ipcMain.handle('skills:list', () => listSkills(repoRootOf(cur().cwd)))
 ipcMain.handle('mrs:list', () => listMrs(repoRootOf(cur().cwd)))
 ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(cur().cwd), iid))
 ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(cur().cwd), iid))

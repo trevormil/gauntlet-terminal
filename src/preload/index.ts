@@ -135,6 +135,7 @@ const gt = {
   },
   projectSessions: () => ipcRenderer.invoke('sessions:project-list'),
   getProjectSession: (slug: string) => ipcRenderer.invoke('sessions:project-get', slug),
+  listSkills: () => ipcRenderer.invoke('skills:list'),
   listMrs: () => ipcRenderer.invoke('mrs:list'),
   getMr: (iid: number) => ipcRenderer.invoke('mrs:get', iid),
   getMrDiff: (iid: number) => ipcRenderer.invoke('mrs:diff', iid),
