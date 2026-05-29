@@ -14,7 +14,7 @@ import { sendUrl, getUpdatesUrl, parseUpdates } from './telegram-api'
 // configured; otherwise the legacy project-template scripts are used.
 const POLL = join(homedir(), '.claude', 'bin', 'telegram-poll.sh') // legacy fallback
 const NOTIFY = join(homedir(), '.claude', 'bin', 'telegram-notify.sh') // legacy fallback
-const OFFSET_FILE = join(homedir(), '.config', 'gauntlet-terminal', 'telegram-offset')
+const OFFSET_FILE = join(homedir(), '.config', 'TerMinal', 'telegram-offset')
 const STATUS_EMOJI: Record<string, string> = {
   running: '⏳',
   done: '✅',
@@ -114,7 +114,7 @@ const short = (root: string) => root.split('/').pop() || root
 function cmdHelp() {
   reply(
     [
-      '🤖 Gauntlet Terminal — AFK control',
+      '🤖 TerMinal — AFK control',
       '',
       '/runs — active + recent runs',
       '/run <agent> [codex|claude] [persona] [pipeline] [@repo]',
@@ -263,7 +263,7 @@ export async function testTelegram(): Promise<{ ok: boolean; error?: string }> {
     const res = await fetch(sendUrl(t.botToken), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: t.chatId, text: '✅ Gauntlet Terminal connected.' }),
+      body: JSON.stringify({ chat_id: t.chatId, text: '✅ TerMinal connected.' }),
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) {

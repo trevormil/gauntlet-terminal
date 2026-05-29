@@ -85,7 +85,7 @@ export async function readUsage(): Promise<Usage> {
         Authorization: `Bearer ${creds.accessToken}`,
         'anthropic-beta': 'oauth-2025-04-20',
         'anthropic-version': '2023-06-01',
-        'User-Agent': 'gauntlet-terminal',
+        'User-Agent': 'TerMinal',
       },
     })
     if (res.status === 429) {

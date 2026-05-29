@@ -5,7 +5,7 @@ last-verified: 2026-05-28
 
 # New project from project-template
 
-Gauntlet Terminal vendors
+TerMinal vendors
 [project-template](https://github.com/trevormil/project-template) as a git
 submodule at `templates/project-template` and can scaffold a brand-new repo from
 it. Scaffolding **never** touches an existing directory — the target must be a

@@ -13,7 +13,7 @@ raises a macOS notification for the notable kinds).
 ## The log
 
 ```
-~/.config/gauntlet-terminal/activity.jsonl     # global, one JSON event per line
+~/.config/TerMinal/activity.jsonl     # global, one JSON event per line
 ```
 
 Override the path with `GT_ACTIVITY_LOG`. The terminal caps + reads the tail;

@@ -54,7 +54,7 @@ function sendTelegram(ev: ActivityEvent) {
 // Activity feed + system notifications. Events are stored GLOBALLY (one log
 // across every repo/session) but each is tagged with repo + session, so the
 // Activity tab can show the global firehose or filter to one repo/session.
-const LOG = join(homedir(), '.config', 'gauntlet-terminal', 'activity.jsonl')
+const LOG = join(homedir(), '.config', 'TerMinal', 'activity.jsonl')
 const MAX_KEEP = 2000 // cap the on-disk log
 
 export type ActivityKind =

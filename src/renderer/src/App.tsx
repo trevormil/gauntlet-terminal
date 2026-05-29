@@ -147,7 +147,7 @@ export default function App() {
         <div className="mr-2.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center overflow-hidden rounded-[5px]">
           <img
             src={logo}
-            alt="Gauntlet Terminal"
+            alt="TerMinal"
             draggable={false}
             className="h-full w-full scale-[1.28] object-cover"
           />

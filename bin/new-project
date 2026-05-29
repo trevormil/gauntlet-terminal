@@ -12,7 +12,7 @@ set -euo pipefail
 
 NAME="${1:?usage: bin/new-project <name> [parent-dir]}"
 # default parent = the app's configured projects dir (Settings), else $HOME
-SETTINGS="$HOME/.config/gauntlet-terminal/settings.json"
+SETTINGS="$HOME/.config/TerMinal/settings.json"
 DEFAULT_PARENT="$HOME"
 if [ -f "$SETTINGS" ]; then
   pd="$(grep -o '"projectsDir"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS" | sed 's/.*:[[:space:]]*"//;s/"$//')"

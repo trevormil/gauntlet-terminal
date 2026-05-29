@@ -264,7 +264,7 @@ function createWindow() {
     // explicit position so the ●●● controls sit visible + vertically centered in
     // the 36px (h-9) tab bar, instead of being clipped/mis-aligned by the default
     trafficLightPosition: { x: 14, y: 11 },
-    title: 'Gauntlet Terminal',
+    title: 'TerMinal',
     icon: join(moduleDir, '../../build/icon.png'),
     webPreferences: { preload: join(moduleDir, '../preload/index.mjs'), sandbox: false },
   })

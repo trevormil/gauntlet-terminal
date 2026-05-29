@@ -94,7 +94,7 @@ function HelpTab(_props: { ctx: TabContext }) {
             Developer Guide
           </h1>
           <p className="mt-2 text-[13px] leading-relaxed text-zinc-400">
-            Gauntlet Terminal wraps the real <code className="font-mono text-zinc-300">claude</code> CLI with a
+            TerMinal wraps the real <code className="font-mono text-zinc-300">claude</code> CLI with a
             per-session cockpit. A repo scaffolded from <span className="text-zinc-200">project-template</span>{' '}
             ships an agent-driven SDLC: you (or an agent) move work from idea → ticket → branch → PR → review,
             and <span className="font-semibold text-zinc-200">you</span> do the final merge. This is the loop and

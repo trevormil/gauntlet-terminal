@@ -107,7 +107,7 @@ export async function detectEnv(): Promise<EnvDetect> {
 // The portable activity-feed hook (plain JS). Behavior-identical to the
 // committed bin/gt-notify (that file is the canonical copy / docs reference).
 const GT_NOTIFY_SRC = `#!/usr/bin/env bun
-// gt-notify — append one event to the Gauntlet Terminal activity feed.
+// gt-notify — append one event to the TerMinal activity feed.
 // Usage: gt-notify <kind> "<title>" [--detail ..] [--repo ..] [--repo-root ..] [--session ..]
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -138,7 +138,7 @@ const ev = {
   ...(opt['repo-root'] ? { repoRoot: opt['repo-root'] } : {}),
   ...(opt.session ? { sessionId: opt.session } : {}),
 }
-const LOG = join(homedir(), '.config', 'gauntlet-terminal', 'activity.jsonl')
+const LOG = join(homedir(), '.config', 'TerMinal', 'activity.jsonl')
 mkdirSync(dirname(LOG), { recursive: true })
 appendFileSync(LOG, JSON.stringify(ev) + '\\n')
 `

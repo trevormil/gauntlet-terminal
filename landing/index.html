@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gauntlet Terminal — your coding agent, with a cockpit</title>
+    <title>TerMinal — your coding agent, with a cockpit</title>
+    <link rel="icon" type="image/png" href="logo.png" />
     <style>
       :root {
         --bg: #0a0a0f;
@@ -44,8 +45,11 @@
         padding: 26px 0;
       }
       .logo {
-        color: var(--accent);
-        font-size: 20px;
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        display: inline-block;
+        vertical-align: middle;
       }
       .brand {
         font-weight: 700;
@@ -294,12 +298,12 @@
   <body>
     <div class="wrap">
       <header>
-        <span class="logo">◆</span>
-        <span class="brand">Gauntlet Terminal</span>
+        <img class="logo" src="logo.png" alt="" />
+        <span class="brand">TerMinal</span>
         <nav>
           <a href="#install">Install</a>
           <a href="#plugins">Plugins</a>
-          <a href="https://labs.gauntletai.com/trevormiller/gauntlet-terminal">Repo</a>
+          <a href="https://github.com/trevormil/TerMinal">Repo</a>
         </nav>
       </header>
 
@@ -315,7 +319,7 @@
           <span class="dollar">$</span>
           <code id="cmd-text"
             >curl -fsSL
-            https://labs.gauntletai.com/trevormiller/gauntlet-terminal/-/raw/main/install.sh |
+            https://raw.githubusercontent.com/trevormil/TerMinal/main/install.sh |
             bash</code
           >
           <button class="copy" onclick="copyCmd()">copy</button>
@@ -328,7 +332,7 @@
           <span class="dot" style="background: #ff5f57"></span>
           <span class="dot" style="background: #febc2e"></span>
           <span class="dot" style="background: #28c840"></span>
-          <span style="margin-left: 8px">◆ Gauntlet Terminal — claude · my-project</span>
+          <span style="margin-left: 8px">◆ TerMinal — claude · my-project</span>
           <span style="margin-left: auto">⧉ Plugins · 4</span>
         </div>
         <div class="body">
@@ -408,8 +412,8 @@
 <span class="k">export default</span> plugin</div>
 
       <footer>
-        <span>◆ Gauntlet Terminal</span>
-        <a href="https://labs.gauntletai.com/trevormiller/gauntlet-terminal">source</a>
+        <span>◆ TerMinal</span>
+        <a href="https://github.com/trevormil/TerMinal">source</a>
         <span>·</span>
         <span>built in one night · macOS · MIT</span>
       </footer>

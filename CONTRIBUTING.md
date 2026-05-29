@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for taking a look. Gauntlet Terminal is a small, hackable Electron app —
+Thanks for taking a look. TerMinal is a small, hackable Electron app —
 contributions of all sizes are welcome.
 
 ## Dev setup
@@ -8,8 +8,8 @@ contributions of all sizes are welcome.
 Requires [bun](https://bun.sh) and the `claude` CLI on your `PATH`.
 
 ```bash
-git clone https://github.com/trevormil/gauntlet-terminal.git
-cd gauntlet-terminal
+git clone https://github.com/trevormil/TerMinal.git
+cd TerMinal
 git submodule update --init   # vendors project-template (for scaffolding)
 bun install                   # rebuilds node-pty against Electron's ABI
 bun run dev                   # launch the dev build with HMR

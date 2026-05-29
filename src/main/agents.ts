@@ -169,7 +169,7 @@ export function onAgentEvent(fn: (channel: string, payload: unknown) => void) {
 }
 
 // --- persistence: one <id>.json (metadata) + <id>.log (output) per run --------
-const RUNS_DIR = join(homedir(), '.config', 'gauntlet-terminal', 'agent-runs')
+const RUNS_DIR = join(homedir(), '.config', 'TerMinal', 'agent-runs')
 const KEEP_RUNS = 100
 const metaPath = (id: string) => join(RUNS_DIR, `${id}.json`)
 const logPath = (id: string) => join(RUNS_DIR, `${id}.log`)

@@ -11,7 +11,7 @@ import { reviewForPrDir, newestReviewDirForRepo } from './review'
 //   ~/.claude/projects/<cwd-hash>/<session-id>.jsonl
 // The filename is the session id; message lines carry usage, cwd, gitBranch.
 //
-// Gauntlet Terminal attaches to ONE session for the life of the window — every
+// TerMinal attaches to ONE session for the life of the window — every
 // reader here is keyed by session id, so context %, cost, etc. all describe
 // that single session, never an aggregate.
 // ---------------------------------------------------------------------------

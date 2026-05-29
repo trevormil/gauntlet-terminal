@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-// gt-notify — append one event to the Gauntlet Terminal activity feed.
+// gt-notify — append one event to the TerMinal activity feed.
 //
-// The app tails ~/.config/gauntlet-terminal/activity.jsonl, so ANY tool (a
+// The app tails ~/.config/TerMinal/activity.jsonl, so ANY tool (a
 // skill, a CI step, a git hook) can surface in the Activity tab + notifications
 // by writing one JSON line. This is the portable, documented hook.
 //
@@ -43,6 +43,6 @@ const ev = {
   ...(opt['repo-root'] ? { repoRoot: opt['repo-root'] } : {}),
   ...(opt.session ? { sessionId: opt.session } : {}),
 }
-const LOG = join(homedir(), '.config', 'gauntlet-terminal', 'activity.jsonl')
+const LOG = join(homedir(), '.config', 'TerMinal', 'activity.jsonl')
 mkdirSync(dirname(LOG), { recursive: true })
 appendFileSync(LOG, JSON.stringify(ev) + '\n')

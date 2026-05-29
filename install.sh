@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Gauntlet Terminal — one-line installer (macOS).
-#   curl -fsSL https://raw.githubusercontent.com/trevormil/gauntlet-terminal/main/install.sh | bash
+# TerMinal — one-line installer (macOS).
+#   curl -fsSL https://raw.githubusercontent.com/trevormil/TerMinal/main/install.sh | bash
 set -euo pipefail
 
-REPO="https://github.com/trevormil/gauntlet-terminal.git"
-DIR="${1:-$HOME/gauntlet-terminal}"
+REPO="https://github.com/trevormil/TerMinal.git"
+DIR="${1:-$HOME/TerMinal}"
 
-echo "◆ Gauntlet Terminal installer"
+echo "◆ TerMinal installer"
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "✗ bun is required — install it from https://bun.sh then re-run." >&2

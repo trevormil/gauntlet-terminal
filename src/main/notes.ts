@@ -3,19 +3,19 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 // Notes:
-//   global → ~/.config/gauntlet-terminal/notes.md  (unbound, spans all repos)
-//   repo   → <repoRoot>/.gauntlet-terminal/notes.md (bound to the repo, gitignored)
+//   global → ~/.config/TerMinal/notes.md  (unbound, spans all repos)
+//   repo   → <repoRoot>/.TerMinal/notes.md (bound to the repo, gitignored)
 // Both persist on disk, so they survive across sessions.
 
 export type NotesScope = 'repo' | 'global'
 
-const GLOBAL = join(homedir(), '.config', 'gauntlet-terminal', 'notes.md')
-const repoNotesPath = (repoRoot: string) => join(repoRoot, '.gauntlet-terminal', 'notes.md')
+const GLOBAL = join(homedir(), '.config', 'TerMinal', 'notes.md')
+const repoNotesPath = (repoRoot: string) => join(repoRoot, '.TerMinal', 'notes.md')
 
 // keep notes.md out of git without touching the committed widgets.json
 function ensureGitignored(repoRoot: string) {
   const gi = join(repoRoot, '.gitignore')
-  const entry = '.gauntlet-terminal/notes.md'
+  const entry = '.TerMinal/notes.md'
   try {
     let content = existsSync(gi) ? readFileSync(gi, 'utf8') : ''
     if (content.split('\n').some((l) => l.trim() === entry)) return

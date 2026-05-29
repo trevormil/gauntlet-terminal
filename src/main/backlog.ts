@@ -140,7 +140,7 @@ export function createTicket(repoRoot: string, input: NewTicket): Ticket {
     horizon: 'now',
     hitl: false,
     type: input.type || 'feature',
-    source: 'gauntlet-terminal',
+    source: 'TerMinal',
     created: today(),
     updated: today(),
     prs: [],

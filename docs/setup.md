@@ -1,6 +1,6 @@
-# Gauntlet Terminal — setup
+# TerMinal — setup
 
-Gauntlet Terminal is self-configuring: it works on first launch with sensible
+TerMinal is self-configuring: it works on first launch with sensible
 defaults and **detects** what's installed on your machine. Nothing here is
 required to start — missing tools just disable the features that need them, with
 a clear hint in Settings. Everything below is also reachable from the in-app
@@ -81,7 +81,7 @@ scripts, the app falls back to those.
 ## 5. Activity feed hook (`gt-notify`)
 
 Anything can surface in the **Activity** tab + notifications by appending one
-JSON line to `~/.config/gauntlet-terminal/activity.jsonl`:
+JSON line to `~/.config/TerMinal/activity.jsonl`:
 
 ```json
 {"id":"...","ts":1700000000000,"kind":"task-complete","title":"...","detail":"...","repo":"...","repoRoot":"...","sessionId":"..."}
@@ -100,6 +100,6 @@ steps, and git hooks can call it to push events into the cockpit.
 
 ## Where settings live
 
-`~/.config/gauntlet-terminal/settings.json` — created/migrated automatically.
+`~/.config/TerMinal/settings.json` — created/migrated automatically.
 Re-run the first-time walkthrough anytime via **Settings → Re-run first-time
 setup**.

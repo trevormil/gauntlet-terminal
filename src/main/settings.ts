@@ -82,7 +82,7 @@ export function migrate(raw: unknown): Settings {
   return s
 }
 
-const FILE = join(homedir(), '.config', 'gauntlet-terminal', 'settings.json')
+const FILE = join(homedir(), '.config', 'TerMinal', 'settings.json')
 
 let cache: Settings | null = null
 export function readSettings(): Settings {

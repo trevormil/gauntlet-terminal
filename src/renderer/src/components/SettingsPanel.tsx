@@ -90,12 +90,12 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
   const copySetupPrompt = async () => {
     const repo = s?.templateRepo || 'https://github.com/trevormil/project-template'
     const prompt = [
-      'I just installed Gauntlet Terminal (an Electron alt-terminal for AI coding agents).',
+      'I just installed TerMinal (an Electron alt-terminal for AI coding agents).',
       'Help me finish one-time setup on this machine. Check what already exists before changing anything.',
       '',
       '1. CLIs: ensure `claude` (required) is installed + logged in, plus any of `codex`, `gh`, `glab` I plan to use. Walk me through `gh auth login` / `glab auth login` if needed.',
       `2. Global agent skills: clone ${repo} and follow its setup docs to install the project-template workflow skills (code-review, iterate, test-suite, document, pr-creation, stacked-mr, notify) into ~/.claude/skills (and ~/.codex/skills for codex). Verify each resolves.`,
-      '3. (Optional) Telegram: help me create a bot with @BotFather and find my numeric chat id, so I can paste the token + id into Gauntlet Terminal → Settings → Telegram.',
+      '3. (Optional) Telegram: help me create a bot with @BotFather and find my numeric chat id, so I can paste the token + id into TerMinal → Settings → Telegram.',
       '',
       'Summarize what you did and what is left for me.',
     ].join('\n')
@@ -288,7 +288,7 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
           </Section>
 
           <div className="px-5 py-3 text-center text-[10.5px] text-zinc-600">
-            Gauntlet Terminal · settings stored in ~/.config/gauntlet-terminal/settings.json
+            TerMinal · settings stored in ~/.config/TerMinal/settings.json
           </div>
         </div>
       </div>

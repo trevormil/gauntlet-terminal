@@ -7,7 +7,7 @@ import type { Engine } from './agents'
 // Scheduled (cron-ish) agent runs. Interval-based cadence from the last run —
 // simple + good enough; a 60s ticker in main fires the due ones. Stored globally
 // (each schedule carries its repoRoot).
-const FILE = join(homedir(), '.config', 'gauntlet-terminal', 'schedules.json')
+const FILE = join(homedir(), '.config', 'TerMinal', 'schedules.json')
 
 export type Cadence = 'hourly' | 'daily' | 'weekly'
 export type Schedule = {

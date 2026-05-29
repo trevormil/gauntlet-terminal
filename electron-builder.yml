@@ -1,5 +1,5 @@
-appId: com.gauntlet.terminal
-productName: Gauntlet Terminal
+appId: com.terminal.app
+productName: TerMinal
 # electron-vite outputs the bundled main/preload/renderer to out/; package that.
 directories:
   buildResources: build # build/icon.icns is picked up automatically

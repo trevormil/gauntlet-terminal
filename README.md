@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="src/renderer/src/assets/logo.png" width="96" height="96" alt="Gauntlet Terminal" />
-  <h1>Gauntlet Terminal</h1>
+  <img src="src/renderer/src/assets/logo.png" width="96" height="96" alt="TerMinal" />
+  <h1>TerMinal</h1>
   <p><strong>Your coding agent, with a cockpit.</strong></p>
 </div>
 
@@ -27,8 +27,8 @@ mounted when you switch tabs, so a session never drops.
 Requires [bun](https://bun.sh) and the `claude` CLI on your `PATH`.
 
 ```bash
-git clone https://github.com/trevormil/gauntlet-terminal.git
-cd gauntlet-terminal
+git clone https://github.com/trevormil/TerMinal.git
+cd TerMinal
 git submodule update --init   # vendors project-template (for scaffolding)
 bun install                   # also rebuilds node-pty against Electron's ABI
 bun run dev                   # launch the dev build
@@ -51,16 +51,16 @@ The app is **self-configuring** — only `claude` is required; `codex`, `gh`, an
 Package a branded, double-clickable macOS app:
 
 ```bash
-bun run dist        # → dist/Gauntlet Terminal-<ver>-arm64.dmg  +  dist/mac-arm64/Gauntlet Terminal.app
+bun run dist        # → dist/TerMinal-<ver>-arm64.dmg  +  dist/mac-arm64/TerMinal.app
 ```
 
 It's an unsigned local build, so after packaging give it a clean ad-hoc
 signature, then drag it to `/Applications` and pin it to the Dock:
 
 ```bash
-codesign --force --deep --sign - "dist/mac-arm64/Gauntlet Terminal.app"
-cp -R "dist/mac-arm64/Gauntlet Terminal.app" /Applications/
-open "/Applications/Gauntlet Terminal.app"   # right-click → Open the first time
+codesign --force --deep --sign - "dist/mac-arm64/TerMinal.app"
+cp -R "dist/mac-arm64/TerMinal.app" /Applications/
+open "/Applications/TerMinal.app"   # right-click → Open the first time
 ```
 
 See [`docs/runbooks/build-and-release.md`](docs/runbooks/build-and-release.md).
@@ -87,7 +87,7 @@ repo-aware — each shows based on the attached session's repo.
 - **Agents** — on-demand [Codex](https://github.com/openai/codex) agents you
   **Run** from a button. See [Agents](#agents) below.
 - **Notes** — markdown editor (edit/split/preview). Repo notes live at
-  `<repo>/.gauntlet-terminal/notes.md` (auto-gitignored); Global notes span
+  `<repo>/.TerMinal/notes.md` (auto-gitignored); Global notes span
   everything. Both autosave.
 - **Files** — a lightweight editor: CodeMirror (real syntax highlighting,
   find/replace), multi-file tabs, a file tree with type icons + git-ignored
@@ -137,7 +137,7 @@ defaults):
 
 ## <a name="project-template"></a>Spin up new projects (project-template)
 
-Gauntlet Terminal pairs with
+TerMinal pairs with
 [project-template](https://github.com/trevormil/project-template) — a
 self-contained workflow scaffold (sessions → tickets → branches → PRs → review →
 human merge, with in-repo `.reviews/`, cadence `.checks/`, TDD gate, and the
@@ -166,7 +166,7 @@ git submodule update --remote templates/project-template
 ## <a name="setup"></a>Setup & settings
 
 Most config lives in the in-app **Settings** panel (gear icon, top-right) and is
-saved to `~/.config/gauntlet-terminal/settings.json`:
+saved to `~/.config/TerMinal/settings.json`:
 
 - **Projects & worktrees** — where the picker looks for repos; where agent
   worktrees go; the scaffold template repo.
@@ -242,8 +242,8 @@ default-exporting `{ id, title, icon, order, appliesTo(ctx), Component }`.
 ## Command widgets (no code)
 
 Declare a widget that runs a shell command on an interval and renders its
-output — global (`~/.config/gauntlet-terminal/widgets.json`) or per-repo
-(`<repo>/.gauntlet-terminal/widgets.json`, loaded when you attach there).
+output — global (`~/.config/TerMinal/widgets.json`) or per-repo
+(`<repo>/.TerMinal/widgets.json`, loaded when you attach there).
 
 ```json
 [

@@ -1,6 +1,6 @@
 # Architecture
 
-Evergreen overview of how Gauntlet Terminal is put together. Edit in place as
+Evergreen overview of how TerMinal is put together. Edit in place as
 the system changes.
 
 ## Shape

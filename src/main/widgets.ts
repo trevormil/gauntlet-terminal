@@ -8,8 +8,8 @@ import { homedir } from 'node:os'
 //
 // A command widget is declarative: "run this command every N ms, render its
 // stdout." No React required. Two sources:
-//   • global:  ~/.config/gauntlet-terminal/widgets.json
-//   • per-repo: <repo-root>/.gauntlet-terminal/widgets.json   (loaded when the
+//   • global:  ~/.config/TerMinal/widgets.json
+//   • per-repo: <repo-root>/.TerMinal/widgets.json   (loaded when the
 //              attached session's cwd is inside that repo)
 //
 // Security: these run arbitrary shell in the session cwd. Per-repo widgets come
@@ -27,7 +27,7 @@ export type CommandWidget = {
   source: 'global' | 'repo'
 }
 
-const GLOBAL_CFG = join(homedir(), '.config', 'gauntlet-terminal', 'widgets.json')
+const GLOBAL_CFG = join(homedir(), '.config', 'TerMinal', 'widgets.json')
 
 function loadFile(path: string, source: 'global' | 'repo'): CommandWidget[] {
   if (!existsSync(path)) return []
@@ -63,7 +63,7 @@ function repoRoot(cwd: string): string {
 export function listCommandWidgets(cwd: string): CommandWidget[] {
   const global = loadFile(GLOBAL_CFG, 'global')
   const root = cwd ? repoRoot(cwd) : ''
-  const repo = root ? loadFile(join(root, '.gauntlet-terminal', 'widgets.json'), 'repo') : []
+  const repo = root ? loadFile(join(root, '.TerMinal', 'widgets.json'), 'repo') : []
   return [...global, ...repo]
 }
 

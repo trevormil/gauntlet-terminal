@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 
 // Saved prompts / snippets — reusable prompt text you inject into a session's
 // terminal. Stored globally (reusable across repos).
-const FILE = join(homedir(), '.config', 'gauntlet-terminal', 'snippets.json')
+const FILE = join(homedir(), '.config', 'TerMinal', 'snippets.json')
 
 export type Snippet = { id: string; title: string; body: string }
 

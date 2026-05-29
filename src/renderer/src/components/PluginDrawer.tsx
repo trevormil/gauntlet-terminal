@@ -37,7 +37,7 @@ export function PluginDrawer({
           <code className="rounded bg-black/40 px-1 text-zinc-400">render</code>, or declare a
           command widget in{' '}
           <code className="rounded bg-black/40 px-1 text-zinc-400">
-            .gauntlet-terminal/widgets.json
+            .TerMinal/widgets.json
           </code>
           .
         </p>

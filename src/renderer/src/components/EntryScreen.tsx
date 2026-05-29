@@ -81,7 +81,7 @@ export function EntryScreen({
       <div className="mx-auto max-w-2xl px-8 py-10">
         <div className="mb-1 flex items-center gap-2.5">
           <img src={logo} alt="" draggable={false} className="h-9 w-9 rounded-lg" />
-          <h1 className="gt-grad-text text-2xl font-bold tracking-tight">Gauntlet Terminal</h1>
+          <h1 className="gt-grad-text text-2xl font-bold tracking-tight">TerMinal</h1>
           <div className="flex-1" />
           {onCancel && (
             <button

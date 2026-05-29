@@ -48,7 +48,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       <div className="mx-auto max-w-xl px-8 py-12">
         <div className="mb-2 flex items-center gap-3">
           <img src={logo} alt="" draggable={false} className="h-10 w-10 rounded-xl" />
-          <h1 className="gt-grad-text text-2xl font-bold tracking-tight">Welcome to Gauntlet Terminal</h1>
+          <h1 className="gt-grad-text text-2xl font-bold tracking-tight">Welcome to TerMinal</h1>
         </div>
         <p className="mb-7 text-sm text-zinc-500">
           Mission control for AI coding agents. Quick one-time setup — everything has a sensible

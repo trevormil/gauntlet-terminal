@@ -1,6 +1,6 @@
 # Ideas & backlog
 
-Running notes for Gauntlet Terminal — deferred prompts, known gaps, and creative
+Running notes for TerMinal — deferred prompts, known gaps, and creative
 ideas. Vibe-coded; this is the "what's next / what we punted" list.
 
 ## Deferred / partially-done prompts
