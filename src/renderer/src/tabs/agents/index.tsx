@@ -47,6 +47,7 @@ const statusTone = (s: string): BadgeTone =>
           ? 'mute'
           : 'blue'
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+const repoOf = (root: string) => root.split('/').filter(Boolean).pop() || root
 
 function reltime(ts: number): string {
   const s = (Date.now() - ts) / 1000
@@ -218,11 +219,15 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     }
   }, [ctx.sessionId])
 
+  const [repoFilter, setRepoFilter] = useState('') // '' = all repos
   const selectedRun = runs.find((r) => r.id === sel) || null
   const runningByAgent = useMemo(
     () => new Set(runs.filter((r) => r.status === 'running').map((r) => r.agentId)),
     [runs],
   )
+  // Runs are global across every repo; the filter just narrows the list.
+  const repoOptions = useMemo(() => [...new Set(runs.map((r) => repoOf(r.repoRoot)))].sort(), [runs])
+  const shownRuns = repoFilter ? runs.filter((r) => repoOf(r.repoRoot) === repoFilter) : runs
   useEffect(() => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
@@ -351,13 +356,32 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--gt-border)]">
-            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-              Runs
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-600">Runs</span>
+              <span className="text-[10px] text-zinc-700">all repos</span>
+              <div className="flex-1" />
+              {repoOptions.length > 1 && (
+                <select
+                  value={repoFilter}
+                  onChange={(e) => setRepoFilter(e.target.value)}
+                  title="Filter by repo"
+                  className="rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none"
+                >
+                  <option value="">All repos</option>
+                  {repoOptions.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             {runs.length === 0 ? (
               <div className="px-3 pb-3 text-[12px] text-zinc-600">No runs yet.</div>
+            ) : shownRuns.length === 0 ? (
+              <div className="px-3 pb-3 text-[12px] text-zinc-600">No runs for {repoFilter}.</div>
             ) : (
-              runs.map((r) => (
+              shownRuns.map((r) => (
                 <button
                   key={r.id}
                   onClick={() => setSel(r.id)}
@@ -367,6 +391,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                 >
                   <Badge tone={statusTone(r.status)}>{r.status}</Badge>
                   <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-200">{r.agentTitle}</span>
+                  <span className="shrink-0 font-mono text-[9.5px] text-zinc-600">{repoOf(r.repoRoot)}</span>
                   <span className="shrink-0 text-[9.5px] uppercase text-zinc-600">{r.engine}</span>
                   <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{reltime(r.startedAt)}</span>
                 </button>
