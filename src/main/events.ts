@@ -88,6 +88,9 @@ export type ActivityEvent = {
   repo?: string
   repoRoot?: string
   sessionId?: string
+  // join keys for cycle-time linkage: connect a ticket's events across its life
+  // (ticket-filed → pr-opened{ticket,pr} → pr-verdict{pr} → pr-merged{pr}).
+  ref?: { ticket?: number; pr?: number }
 }
 
 // which kinds raise a macOS/Telegram notification (vs. log-only feed context).

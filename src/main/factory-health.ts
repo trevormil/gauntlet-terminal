@@ -2,6 +2,9 @@ import { readActivity, type ActivityKind } from './events'
 import { listRuns } from './agents'
 import { readCronRuns } from './cron-runs'
 import { openCount as hitlOpenCount } from './hitl'
+import { cycleAndFunnel, type CycleStats, type Funnel } from './cycle'
+
+export type { CycleStats, Funnel } from './cycle'
 
 // Read-only cross-repo factory health, aggregated from the global stores already
 // on disk (activity.jsonl, agent-runs, cron-runs, hitl.json). No new tracking —
@@ -31,6 +34,8 @@ export type FactoryHealth = {
   agents: RunStats
   cron: RunStats & { recentFailures: number }
   hitlOpen: number
+  cycle: CycleStats
+  funnel: Funnel
   recentFailures: { title: string; ts: number; repo: string; kind: string }[]
   daily: { day: string; count: number }[]
   byRepo: { repo: string; events: number }[]
@@ -104,6 +109,8 @@ export function factoryHealth(now = Date.now()): FactoryHealth {
     .sort((a, b) => b.events - a.events)
     .slice(0, 8)
 
+  const { cycle, funnel } = cycleAndFunnel(events, now)
+
   return {
     generatedAt: now,
     window24h: windowStats(events, now - DAY),
@@ -111,6 +118,8 @@ export function factoryHealth(now = Date.now()): FactoryHealth {
     agents: runStats(agentRuns),
     cron: { ...runStats(cronRuns), recentFailures: recentCronFailures },
     hitlOpen: hitlOpenCount(),
+    cycle,
+    funnel,
     recentFailures,
     daily,
     byRepo,

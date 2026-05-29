@@ -599,6 +599,7 @@ ipcMain.handle('tickets:create', (_e, input: NewTicket) => {
     repo: repoForCwd(cur().cwd)?.path || basename(root || ''),
     repoRoot: root,
     sessionId: cur().sessionId,
+    ref: { ticket: t.id },
   })
   return t
 })
@@ -617,6 +618,7 @@ ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; pr
       repo: repoForCwd(cur().cwd)?.path || basename(root || ''),
       repoRoot: root,
       sessionId: cur().sessionId,
+      ref: t?.id ? { ticket: t.id } : undefined,
     })
   }
   return ok

@@ -4,6 +4,12 @@ import { Badge } from '../../components/ui'
 import type { Tab, TabContext, FactoryHealth, AgentRun, Engine, WindowStats } from '../../lib/types'
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+const fmtH = (h: number | null): string => {
+  if (h == null) return '—'
+  if (h < 1) return `${Math.round(h * 60)}m`
+  if (h < 48) return `${h % 1 === 0 ? h : h.toFixed(1)}h`
+  return `${(h / 24).toFixed(1)}d`
+}
 function reltime(ts: number): string {
   const s = (Date.now() - ts) / 1000
   if (s < 60) return `${Math.floor(s)}s`
@@ -174,6 +180,68 @@ function FactoryTab({ ctx }: { ctx: TabContext }) {
                 value={health.hitlOpen}
                 tone={health.hitlOpen > 0 ? 'text-[var(--gt-red)]' : 'text-zinc-100'}
               />
+            </div>
+
+            {/* cycle time — ticket-filed → pr-merged, linked via ref keys */}
+            <div className="mt-4 rounded-xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+              <div className="mb-2.5 flex items-center justify-between text-[10.5px] uppercase tracking-wide text-zinc-600">
+                <span>cycle time · 30d</span>
+                <span className="text-zinc-700">{health.cycle.merged} completed</span>
+              </div>
+              {health.cycle.merged === 0 ? (
+                <div className="text-[11px] text-zinc-600">
+                  No fully-linked tickets yet. Cycle time appears once a ticket flows filed → PR → merged with{' '}
+                  <span className="font-mono text-zinc-500">--ticket</span>/<span className="font-mono text-zinc-500">--pr</span> join
+                  keys.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div className="rounded-lg border border-[var(--gt-border)] bg-black/20 p-2.5">
+                      <div className="text-xl font-bold tabular-nums text-[var(--gt-accent)]">
+                        {fmtH(health.cycle.medianHours)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-zinc-600">median filed→merged</div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--gt-border)] bg-black/20 p-2.5">
+                      <div className="text-xl font-bold tabular-nums text-zinc-200">{fmtH(health.cycle.fileToOpenHours)}</div>
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-zinc-600">filed→PR open</div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--gt-border)] bg-black/20 p-2.5">
+                      <div className="text-xl font-bold tabular-nums text-zinc-200">{fmtH(health.cycle.openToMergeHours)}</div>
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-zinc-600">PR open→merged</div>
+                    </div>
+                  </div>
+                  {/* linked 7d funnel: distinct tickets that progressed each stage */}
+                  <div className="mt-3 border-t border-[var(--gt-border)] pt-2.5">
+                    <div className="mb-1.5 text-[10px] uppercase tracking-wide text-zinc-600">funnel · 7d cohort</div>
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      {(
+                        [
+                          { label: 'filed', n: health.funnel.filed },
+                          { label: 'PR opened', n: health.funnel.opened },
+                          { label: 'merged', n: health.funnel.merged },
+                        ] as const
+                      ).map((s, i, arr) => (
+                        <div key={s.label} className="flex items-center gap-1.5">
+                          <div className="rounded-md border border-[var(--gt-border)] bg-black/20 px-2 py-1">
+                            <span className="font-semibold tabular-nums text-zinc-200">{s.n}</span>{' '}
+                            <span className="text-zinc-500">{s.label}</span>
+                          </div>
+                          {i < arr.length - 1 && (
+                            <span className="text-zinc-700">
+                              →{' '}
+                              <span className="tabular-nums text-zinc-600">
+                                {arr[i].n > 0 ? Math.round((arr[i + 1].n / arr[i].n) * 100) : 0}%
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* throughput 24h vs 7d */}

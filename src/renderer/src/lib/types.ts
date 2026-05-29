@@ -56,6 +56,7 @@ export type ActivityEvent = {
   repo?: string
   repoRoot?: string
   sessionId?: string
+  ref?: { ticket?: number; pr?: number }
 }
 
 export type UsageWindow = { pct: number; resetsAt: number | null } | null
@@ -221,6 +222,13 @@ export type WindowStats = {
   blocked: number
 }
 export type RunStats = { total: number; done: number; failed: number; running: number; successRate: number }
+export type CycleStats = {
+  merged: number
+  medianHours: number | null
+  fileToOpenHours: number | null
+  openToMergeHours: number | null
+}
+export type Funnel = { filed: number; opened: number; merged: number }
 export type FactoryHealth = {
   generatedAt: number
   window24h: WindowStats
@@ -228,6 +236,8 @@ export type FactoryHealth = {
   agents: RunStats
   cron: RunStats & { recentFailures: number }
   hitlOpen: number
+  cycle: CycleStats
+  funnel: Funnel
   recentFailures: { title: string; ts: number; repo: string; kind: string }[]
   daily: { day: string; count: number }[]
   byRepo: { repo: string; events: number }[]
