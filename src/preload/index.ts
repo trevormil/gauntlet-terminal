@@ -49,6 +49,8 @@ const gt = {
     list: () => ipcRenderer.invoke('agents:list'),
     save: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
     reset: (id: string) => ipcRenderer.invoke('agents:reset', id),
+    design: (text: string, engine: string, scope: 'repo' | 'global') =>
+      ipcRenderer.invoke('agents:design', text, engine, scope),
     personas: () => ipcRenderer.invoke('personas:list'),
     pipelines: () => ipcRenderer.invoke('agents:pipelines'),
     run: (id: string, engine?: string, persona?: string, pipeline?: string) =>

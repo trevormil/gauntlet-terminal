@@ -59,6 +59,7 @@ import {
   runTicketAgent,
   runTicketSpawn,
   runFactorySpawn,
+  runDesignerSpawn,
   runPrAgent,
   listPipelines,
   listRuns,
@@ -442,6 +443,9 @@ ipcMain.handle('agents:save', (_e, agent: { id: string; title: string; prompt: s
   saveAgent(repoRootOf(cur().cwd), agent),
 )
 ipcMain.handle('agents:reset', (_e, id: string) => resetAgent(repoRootOf(cur().cwd), id))
+ipcMain.handle('agents:design', (_e, text: string, engine: Engine, scope: 'repo' | 'global') =>
+  runDesignerSpawn(repoRootOf(cur().cwd), text, engine, scope),
+)
 ipcMain.handle('agents:pipelines', () => listPipelines())
 ipcMain.handle('personas:list', () => readPersonas(repoRootOf(cur().cwd)))
 ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine, persona?: string, pipeline?: string) =>

@@ -184,6 +184,23 @@ function writeDisabled(set) {
   }
 }
 
+// Returns the most recent run with status:running for the given scheduleId
+// (after sweepStaleRuns() has already finalized anything truly dead), or
+// undefined if none. Used to refuse a concurrent firing of the same agent.
+function activeRunFor(scheduleId) {
+  try {
+    if (!existsSync(RUNS_DIR)) return undefined
+    for (const f of readdirSync(RUNS_DIR)) {
+      if (!f.endsWith('.json')) continue
+      try {
+        const rec = JSON.parse(readFileSync(join(RUNS_DIR, f), 'utf8'))
+        if (rec.scheduleId === scheduleId && rec.status === 'running') return rec
+      } catch {}
+    }
+  } catch {}
+  return undefined
+}
+
 // Read the most recent N runs for a given scheduleId, newest first.
 function recentRuns(scheduleId, limit = CIRCUIT_BREAK_AFTER) {
   try {
@@ -355,6 +372,31 @@ async function runSchedule(id) {
   }
   if (readDisabled().has(id)) {
     log(`run: schedule ${id} kill-switched (agents/disabled.json) — skipping`)
+    return 0
+  }
+
+  // Concurrent-run guard. Stale runs were just swept; anything still
+  // status:running for this schedule is a true overlap. Never allow two
+  // concurrent runs of the same agent — they'd race on the same worktree
+  // path scheme and pollute each other's state. File HITL + bail.
+  const active = activeRunFor(id)
+  if (active) {
+    const msg = `concurrent run blocked — ${sched.agentTitle} run ${active.id.slice(0, 8)} is already running (started ${new Date(active.startedAt).toISOString()})`
+    log(`run: ${msg}`)
+    fileHitl({
+      title: `Concurrent cron run blocked · ${sched.agentTitle}`,
+      action: 'previous run is still in progress; this firing was refused — investigate why the previous run is taking so long',
+      detail: `active run ${active.id} · ${active.branch}`,
+      repo: sched.repoLabel,
+      repoRoot: sched.repoRoot,
+    })
+    activity({
+      kind: 'blocked',
+      title: `Concurrent cron blocked · ${sched.agentTitle}`,
+      detail: `previous run ${active.id.slice(0, 8)} still running`,
+      repo: sched.repoLabel,
+      repoRoot: sched.repoRoot,
+    })
     return 0
   }
 

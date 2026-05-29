@@ -16,6 +16,8 @@ import { repoForCwd } from './repo'
 import { forgeFor } from './forge'
 import { getPersona } from './personas'
 import { enginePath, resolvedWorktreesDir } from './settings'
+import { readGlobalAgents, saveGlobalAgent } from './agents-global'
+import { fileHitl } from './hitl'
 import { composeSteps, pipelineLabel, type Step } from './pipelines'
 
 export { listPipelines, type PipelineId } from './pipelines'
@@ -34,9 +36,13 @@ export type Agent = {
   prompt: string
   opensPr?: boolean
   engine?: Engine // default engine; overridable per run
+  // Run directly in the repo (no fresh worktree) — e.g. orchestrators like
+  // /factory that manage their own worktrees internally, or quick additive ops.
+  inPlace?: boolean
   // provenance (set by readAgents): a built-in default, a default overridden by
-  // this repo's .agents/agents.json, or a repo-only agent.
-  source?: 'default' | 'override' | 'repo'
+  // this repo's .agents/agents.json, a repo-only agent, a global agent
+  // (~/.config/TerMinal/agents/global.json), or a default overridden globally.
+  source?: 'default' | 'override' | 'repo' | 'global'
 }
 
 export type AgentRunStatus = 'running' | 'done' | 'failed' | 'canceled' | 'interrupted'
@@ -62,9 +68,22 @@ const LOGIN_SHELL = process.env.SHELL || '/bin/zsh'
 const shq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`
 
 // Shipped by default on every repo. A repo's .agents/agents.json overrides or
-// extends these (matched by id). All three are ticket/MR-driven: file tickets
-// for findings, open a PR when there are code changes.
+// extends these (matched by id). All are ticket/MR-driven: file tickets
+// for findings, open a PR when there are code changes. The factory entry is
+// inPlace (no worktree) because /factory itself manages worktrees per stacked
+// MR — wrapping it in one would create confusing worktree-inside-worktree.
 const DEFAULT_AGENTS: Agent[] = [
+  {
+    id: 'factory',
+    title: 'Run /factory',
+    description:
+      'Continuous orchestrator — reconcile, run /stacked-mr passes, handle verdicts. Never merges main.',
+    icon: 'Factory',
+    opensPr: false,
+    inPlace: true,
+    prompt:
+      "Act as the /factory orchestrator for THIS repository, following the project's /factory skill exactly. Continuously turn the backlog into REVIEWED, merge-ready PRs: reconcile with /merge-sync, then run /stacked-mr passes (build a stack TDD-first → batch-review to the bar → handle verdicts), repeating until the in-scope backlog is dry. NEVER merge to main/master — the human merges. Park any TRUE human-need (decision, approval, creds, hard blocker) to the global HITL inbox with .claude/bin/hitl. Skip tickets blocked by depends_on (any dependency whose status is not closed). Emit an activity event at each checkpoint. Do not invent scope. End with the stack summary for the human to merge.",
+  },
   {
     id: 'docs',
     title: 'Improve docs',
@@ -156,12 +175,28 @@ function readRepoAgents(repoRoot: string): Agent[] {
  *  default, a default this repo has customized, and a repo-only agent. */
 export function readAgents(repoRoot: string): Agent[] {
   const defaultIds = new Set(DEFAULT_AGENTS.map((a) => a.id))
+  const global = readGlobalAgents()
+  const globalIds = new Set(global.map((a) => a.id))
   const repo = readRepoAgents(repoRoot)
   const repoIds = new Set(repo.map((a) => a.id))
   const byId = new Map<string, Agent>()
+  // Order matters: defaults → global → repo. Later layers win by id and the
+  // provenance label reflects "any earlier layer also had this id" as override.
   for (const a of DEFAULT_AGENTS)
-    byId.set(a.id, { ...a, source: repoIds.has(a.id) ? 'override' : 'default' })
-  for (const a of repo) byId.set(a.id, { ...a, source: defaultIds.has(a.id) ? 'override' : 'repo' })
+    byId.set(a.id, {
+      ...a,
+      source: repoIds.has(a.id) || globalIds.has(a.id) ? 'override' : 'default',
+    })
+  for (const a of global)
+    byId.set(a.id, {
+      ...a,
+      source: defaultIds.has(a.id) || repoIds.has(a.id) ? 'override' : 'global',
+    })
+  for (const a of repo)
+    byId.set(a.id, {
+      ...a,
+      source: defaultIds.has(a.id) || globalIds.has(a.id) ? 'override' : 'repo',
+    })
   return [...byId.values()]
 }
 
@@ -360,6 +395,23 @@ type RunSpec = {
 function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } {
   if (!repoRoot) return { error: 'not a git repo' }
   if (!spec.steps.length) return { error: 'no steps' }
+  // Concurrent-run guard: never let two runs of the same agent on the same
+  // repo overlap. If one is already running, surface HITL + refuse the new
+  // run rather than silently allowing duplicates to thrash on the same worktree.
+  for (const r of runs.values()) {
+    if (r.status === 'running' && r.agentId === spec.id && r.repoRoot === repoRoot) {
+      const msg = `${spec.title} is already running (run ${r.id.slice(0, 8)}) — refusing to start a duplicate`
+      fileHitl({
+        source: 'agent',
+        title: `Duplicate agent run blocked · ${spec.title}`,
+        action: 'another run is in progress; cancel it or wait for it to finish',
+        detail: `existing run ${r.id} · started ${new Date(r.startedAt).toLocaleString()}`,
+        repo: basename(repoRoot),
+        repoRoot,
+      })
+      return { error: msg }
+    }
+  }
   const ts = Date.now()
   // ts + random tag → unique worktree path + branch even if two runs of the
   // same agent start in the same millisecond (parallel fan-out / fast clicks).
@@ -498,8 +550,84 @@ export function runAgent(
     personaId,
     pipelineId,
   )
-  return runSpec(repoRoot, { id: agent.id, title: agent.title, steps, engine: engine || agent.engine || 'codex', persona, pipeline })
+  return runSpec(repoRoot, {
+    id: agent.id,
+    title: agent.title,
+    steps,
+    engine: engine || agent.engine || 'codex',
+    persona,
+    pipeline,
+    inPlace: agent.inPlace,
+  })
 }
+
+/** Spawn a claude/codex run that designs a new agent from a natural-language
+ *  description and saves it into the active scope (the active repo's
+ *  .agents/agents.json, or the global registry). Runs inPlace — no fresh
+ *  worktree, no PR — because designing an agent is a quick read+write op. */
+export function runDesignerSpawn(
+  repoRoot: string,
+  text: string,
+  engine: Engine,
+  scope: 'repo' | 'global',
+): AgentRun | { error: string } {
+  const t = text.trim()
+  if (!t) return { error: 'empty request' }
+  const target =
+    scope === 'global'
+      ? join(homedir(), '.config', 'TerMinal', 'agents', 'global.json')
+      : join(repoRoot, '.agents', 'agents.json')
+  const scopeLabel = scope === 'global' ? "TerMinal's global agent registry (~/.config/TerMinal/agents/global.json)" : `this repo's .agents/agents.json`
+  const prompt = `You are designing a new TerMinal agent definition from the user's natural-language description below.
+
+Target: ${scopeLabel}
+Target file (load JSON array if it exists, else create with parent dirs): ${target}
+
+The agent format is an entry in the target JSON array with these fields:
+  - id           kebab-case, unique in the target file
+  - title        short user-facing label (e.g. "Audit security")
+  - description  one-line summary
+  - icon         lucide-react icon name — use one already used by an existing agent in this repo (Bot, BookText, ScanSearch, ListChecks, TestTube2, ShieldAlert, Gauge, PackageCheck, Eraser, etc.) or any lucide name appropriate to the agent's purpose
+  - prompt       the prompt that runs the agent at execution time (write this BAKING IN this project's conventions — see below)
+  - opensPr      boolean — true if the agent ends with a PR
+  - engine       "claude" or "codex" — pick the better fit; the user can override per-run
+  - inPlace      optional boolean — true ONLY if the agent itself manages worktrees (rare; usually false)
+
+CONVENTIONS TO READ BEFORE DESIGNING THE PROMPT:
+  1. CLAUDE.md (root) — project conventions and global rules.
+  2. .agents/forge.md — the auto-mergeable label convention and forge command mapping.
+  3. .agents/changelog.md or .agents/drift.md — examples of scheduled-agent specs.
+  4. backlog/EXAMPLE.md or .claude/skills/ticket/EXAMPLE.md — ticket conventions, including depends_on.
+  5. The agents already in .agents/agents.json (don't duplicate them; pick a distinct id).
+
+THE AGENT'S PROMPT MUST FOLLOW:
+  - The ticket + MR workflow uniformly: work in a worktree (the runner provides one unless you set inPlace), commit, push, open a PR via the project's pr-creation skill or gh/glab directly. The MERGE TO MAIN IS HUMAN-ONLY — never set --auto / --merge.
+  - File backlog tickets for findings the agent cannot fix in-pass (with depends_on linkage when the work cascades).
+  - Open a PR only when there are concrete changes. If the diff is ONLY docs/markdown/tickets/reports, the agent's prompt should instruct it to apply the auto-mergeable label per .agents/forge.md.
+  - Explicit success criteria (what makes the run "done").
+  - HITL only for true blockers (decisions, credentials, hard blockers) via .claude/bin/hitl.
+
+User's description:
+> ${t}
+
+PROCESS:
+  1. Read the conventions listed above (enough to write a faithful prompt).
+  2. Pick a kebab-case id, short title, lucide icon, and engine.
+  3. Author the agent prompt — surgical, specific, with the workflow rules baked in.
+  4. Save the entry into ${target}. If the file exists, read its JSON array and append; if not, create with mkdir -p of the parent dir and an array containing just the new entry. Write valid JSON (2-space indent).
+  5. Confirm by printing the new entry as JSON and the target path.
+
+DO NOT open a PR, do not modify other agents, do not invent extra files.`
+  return runSpec(repoRoot, {
+    id: `design-${scope}`,
+    title: `Design agent · ${t.slice(0, 48)}`,
+    steps: [{ label: 'design agent', prompt }],
+    engine,
+    inPlace: true,
+  })
+}
+
+export { saveGlobalAgent }
 
 /** Turn a backlog ticket into an implementation run that opens a PR. */
 export function runTicketAgent(

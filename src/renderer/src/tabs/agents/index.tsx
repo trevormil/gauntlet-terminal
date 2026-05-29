@@ -60,6 +60,7 @@ const SOURCE: Record<string, { label: string; tone: BadgeTone }> = {
   default: { label: 'default', tone: 'mute' },
   override: { label: 'customized', tone: 'yellow' },
   repo: { label: 'custom', tone: 'accent' },
+  global: { label: 'global', tone: 'blue' },
 }
 // How the engine wraps the prompt at run time (worktree filled in per run).
 const runsAs = (engine: Engine): string =>
@@ -179,7 +180,34 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [editing, setEditing] = useState<Agent | 'new' | null>(null)
   const [agentFilter, setAgentFilter] = useState<'all' | 'generic' | 'per-repo'>('all')
+  const [designText, setDesignText] = useState('')
+  const [designEngine, setDesignEngine] = useState<Engine>('claude')
+  const [designScope, setDesignScope] = useState<'repo' | 'global'>('repo')
+  const [designing, setDesigning] = useState(false)
+  const [designMsg, setDesignMsg] = useState('')
   const logRef = useRef<HTMLPreElement>(null)
+  // Honor the user's default engine on first mount; same pattern as Tickets/Factory.
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setDesignEngine(s.defaultEngine))
+  }, [])
+  const submitDesign = async () => {
+    const text = designText.trim()
+    if (!text) return
+    setDesigning(true)
+    setDesignMsg('')
+    const r = await window.gt.agents.design(text, designEngine, designScope)
+    setDesigning(false)
+    if ('error' in r) {
+      setDesignMsg(`error: ${r.error}`)
+      return
+    }
+    setDesignText('')
+    setDesignMsg(
+      `${designEngine} is designing the agent into ${designScope === 'global' ? 'the global registry' : 'this repo'} — it'll show up in the list once the run completes`,
+    )
+    setRuns((prev) => [r, ...prev.filter((x) => x.id !== r.id)])
+    setSel(r.id)
+  }
 
   const reloadAgents = () => window.gt.agents.list().then(setAgents)
   const toggleExpand = (id: string) =>
@@ -210,6 +238,14 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
       })
       setOutputs((o) => (o[run.id] === undefined ? { ...o, [run.id]: run.output } : o))
       setSel((s) => s ?? run.id)
+      // When a designer run finishes, reload the agents list so the newly-
+      // saved entry shows up without a manual refresh.
+      if (
+        (run.agentId === 'design-repo' || run.agentId === 'design-global') &&
+        run.status === 'done'
+      ) {
+        reloadAgents()
+      }
     })
     const offOutput = window.gt.agents.onOutput(({ runId, chunk }) => {
       setOutputs((o) => ({ ...o, [runId]: (o[runId] || '') + chunk }))
@@ -252,6 +288,70 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
         <span className="text-[11px] text-zinc-600">
           own worktree · opens a PR · {ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}
         </span>
+      </div>
+
+      {/* Designer text-box — spawn a claude/codex run that designs an agent
+          from a natural-language description and saves it into the chosen
+          scope (this repo's .agents/agents.json, or the global registry). */}
+      <div className="shrink-0 border-b border-[var(--gt-border)] bg-[var(--gt-panel)]/40 px-4 py-2.5">
+        <div className="flex items-start gap-2">
+          <Bot size={14} strokeWidth={2} className="mt-1 shrink-0 text-[var(--gt-accent-light)]" />
+          <textarea
+            value={designText}
+            onChange={(e) => setDesignText(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitDesign()
+            }}
+            placeholder="Describe the agent — what it does, when to run it, what it should produce…"
+            rows={2}
+            className="min-w-0 flex-1 resize-none rounded-md border border-[var(--gt-border)] bg-black/20 px-2 py-1.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-[var(--gt-accent)]/60 focus:outline-none"
+          />
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="flex items-center gap-0.5 rounded-md border border-[var(--gt-border)] p-0.5">
+              {(['repo', 'global'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setDesignScope(s)}
+                  title={
+                    s === 'repo'
+                      ? "Save to this repo's .agents/agents.json"
+                      : 'Save to the global registry (~/.config/TerMinal/agents/global.json)'
+                  }
+                  className={`rounded-sm px-1.5 py-0.5 text-[10px] ${
+                    designScope === s
+                      ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <select
+              value={designEngine}
+              onChange={(e) => setDesignEngine(e.target.value as Engine)}
+              className="rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none"
+            >
+              <option value="claude">claude</option>
+              <option value="codex">codex</option>
+            </select>
+            <button
+              onClick={submitDesign}
+              disabled={!designText.trim() || designing}
+              className="inline-flex items-center gap-1 rounded-md bg-[var(--gt-accent)] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+            >
+              <Bot size={11} strokeWidth={2.5} />
+              {designing ? 'Spawning…' : 'Design agent'}
+            </button>
+          </div>
+        </div>
+        {designMsg && (
+          <div
+            className={`mt-1 pl-6 text-[11px] ${designMsg.startsWith('error:') ? 'text-[var(--gt-red)]' : 'text-[var(--gt-green)]'}`}
+          >
+            {designMsg}
+          </div>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">

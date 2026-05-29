@@ -174,7 +174,8 @@ export type Agent = {
   prompt: string
   opensPr?: boolean
   engine?: Engine
-  source?: 'default' | 'override' | 'repo'
+  inPlace?: boolean
+  source?: 'default' | 'override' | 'repo' | 'global'
 }
 export type Persona = { id: string; title: string; description: string; icon?: string; prompt: string }
 export type PipelineId = 'single' | 'review' | 'review-iterate'
@@ -449,6 +450,7 @@ export type GtApi = {
     list: () => Promise<Agent[]>
     save: (agent: Partial<Agent> & { id: string; title: string; prompt: string }) => Promise<{ ok: true } | { error: string }>
     reset: (id: string) => Promise<{ ok: true } | { error: string }>
+    design: (text: string, engine: Engine, scope: 'repo' | 'global') => Promise<AgentRun | { error: string }>
     personas: () => Promise<Persona[]>
     pipelines: () => Promise<PipelineInfo[]>
     run: (
