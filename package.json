@@ -1,7 +1,7 @@
 {
   "name": "terminal",
   "version": "0.1.0",
-  "description": "A standalone software factory for coding agents: hosts the real Claude Code / Codex CLI with a live cockpit, autonomous build loop, scheduling, and cross-repo observability.",
+  "description": "A standalone, local-first software factory for coding agents: hosts the real Claude Code / Codex CLI with a live cockpit, autonomous build loop, scheduling, and cross-repo observability — no server, no account.",
   "author": "Trevor Miller",
   "license": "MIT",
   "repository": {

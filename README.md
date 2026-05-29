@@ -20,6 +20,11 @@ branch → PR → review → **you** merge. The human gate to `main` is never cr
 by the app; agents stop at "PR open" and park anything that needs you to a
 global inbox.
 
+**Local-first.** No server, no account, no phone-home. Every artifact — the
+activity feed, HITL inbox, schedules, run logs, code-review results — lives on
+your machine (`~/.config/TerMinal` + in-repo `.reviews/`), renders offline, and
+runs on *your* `gh`/`glab`/`claude` auth, never ours.
+
 Every session carries its own **cockpit** — a sidebar of live telemetry for
 *that* session: context-window %, token burn, your plan's **5-hour + weekly
 usage** (a live `/usage` mirror), what the agent is doing _right now_, its todo
