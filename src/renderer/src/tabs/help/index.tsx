@@ -14,6 +14,9 @@ import {
   FlagTriangleRight,
   SquareTerminal,
   LayoutGrid,
+  Blocks,
+  Bot,
+  Wand2,
   type LucideIcon,
 } from 'lucide-react'
 import type { Tab, TabContext } from '../../lib/types'
@@ -185,6 +188,71 @@ function HelpTab(_props: { ctx: TabContext }) {
               <span className="font-semibold text-zinc-200">Cockpit (right, the Plugins button):</span> live widgets
               — context window, usage + burn-rate, TDD status, git, todos, open-PR summary, and Skills. Toggle any
               of them from the Plugins drawer; the × on a widget hides it.
+            </p>
+          </div>
+        </Section>
+
+        <Section icon={Blocks} title="Make it yours">
+          <p className="mb-3 text-[12px] leading-relaxed text-zinc-400">
+            TerMinal is a flexible <span className="text-zinc-200">starting point</span>, not a fixed app. The
+            cockpit and tabs are <span className="text-zinc-200">auto-discovered from folders</span> — drop one
+            in and it shows up, no registry to edit. Most per-repo customization needs{' '}
+            <span className="text-zinc-200">no code at all</span>, and you can just ask Claude (running right
+            here) to build it and rebuild the app for your repo.
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <div className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-zinc-200">
+                <LayoutGrid size={13} strokeWidth={2} className="text-[var(--gt-accent-2)]" />
+                Cockpit plugins
+              </div>
+              <p className="mt-1 text-[11.5px] leading-snug text-zinc-400">
+                Drop <code className="font-mono">plugins/&lt;id&gt;/index.tsx</code> exporting a Plugin
+                (<code className="font-mono">poll</code> → <code className="font-mono">render</code>). It shows
+                up in the Plugins drawer automatically. (The Skills widget is one.)
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-zinc-200">
+                <SquareTerminal size={13} strokeWidth={2} className="text-[var(--gt-accent-2)]" />
+                Tabs
+              </div>
+              <p className="mt-1 text-[11.5px] leading-snug text-zinc-400">
+                Drop <code className="font-mono">tabs/&lt;id&gt;/index.tsx</code> exporting a Tab.{' '}
+                <code className="font-mono">appliesTo(ctx)</code> gates it per-repo;{' '}
+                <code className="font-mono">order</code> sets its place in the bar.
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-zinc-200">
+                <Radar size={13} strokeWidth={2} className="text-[var(--gt-green)]" />
+                Per-repo widgets — no code
+              </div>
+              <p className="mt-1 text-[11.5px] leading-snug text-zinc-400">
+                Drop <code className="font-mono">.TerMinal/widgets.json</code> in any repo (or run{' '}
+                <code className="font-mono">/terminal-widget</code>). Each entry is a shell command the cockpit
+                polls and renders — surface repo counts, status, or metrics with zero code.
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-zinc-200">
+                <Bot size={13} strokeWidth={2} className="text-[var(--gt-accent-2)]" />
+                Agents
+              </div>
+              <p className="mt-1 text-[11.5px] leading-snug text-zinc-400">
+                Built-in agents run from the Agents tab in isolated worktrees. Add or override your own
+                per-repo in <code className="font-mono">.agents/agents.json</code> (id, prompt, engine,
+                persona, pipeline).
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2.5 rounded-lg border border-[var(--gt-accent)]/30 bg-[var(--gt-accent)]/10 p-3">
+            <Wand2 size={15} strokeWidth={2} className="mt-0.5 shrink-0 text-[var(--gt-accent-light)]" />
+            <p className="text-[12px] leading-snug text-zinc-300">
+              <span className="font-semibold text-zinc-100">Or just ask Claude.</span> “Add a widget that shows
+              our staging deploy status”, “make a tab for our analytics”, “wire an agent that triages issues” —
+              Claude edits the folder and runs <code className="font-mono">bun run release</code>. The app
+              rebuilds itself for your repo. It's a starting point; bend it to your workflow.
             </p>
           </div>
         </Section>
