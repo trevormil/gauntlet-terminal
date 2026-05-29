@@ -490,6 +490,8 @@ export type GtApi = {
     runLog: (runId: string) => Promise<string>
     reconcile: () => Promise<{ loaded: number; removed: number }>
     removeAll: () => Promise<{ removed: number }>
+    disabledList: () => Promise<string[]>
+    disabledToggle: (id: string, disabled: boolean) => Promise<string[]>
   }
   hitl: {
     list: () => Promise<HitlItem[]>

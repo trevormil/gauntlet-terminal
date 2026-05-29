@@ -31,6 +31,7 @@ import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
 import { listDocs, readDoc } from './docs'
+import { listDisabled, setDisabled as setAgentDisabled } from './agents-disabled'
 import { scaffoldProject } from './scaffold'
 import { readSnippets, writeSnippets, type Snippet } from './snippets'
 import {
@@ -518,6 +519,8 @@ ipcMain.handle('schedules:run-now', (_e, id: string) => {
   return { ok: true }
 })
 ipcMain.handle('schedules:runs', (_e, id?: string) => readCronRuns(id))
+ipcMain.handle('schedules:disabled-list', () => listDisabled())
+ipcMain.handle('schedules:disabled-toggle', (_e, id: string, disabled: boolean) => setAgentDisabled(id, disabled))
 ipcMain.handle('schedules:run-log', (_e, runId: string) => readCronRunLog(runId))
 ipcMain.handle('schedules:reconcile', () => reconcileSchedules())
 // Global HITL inbox (cross-repo). Filing fires a blocked notification (TG + macOS).

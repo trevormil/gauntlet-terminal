@@ -87,10 +87,47 @@ ${trigXml}
   <key>StandardErrorPath</key>
   <string>${esc(logOut)}</string>
   <key>EnvironmentVariables</key>
-  <dict><key>HOME</key><string>${esc(homedir())}</string></dict>
+  <dict>
+    <key>HOME</key><string>${esc(homedir())}</string>
+    <key>PATH</key><string>${esc(launchdPath())}</string>
+  </dict>
 </dict>
 </plist>
 `
+}
+
+// launchd hands the runner a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), so
+// claude / codex / bun / gh / glab all fail to resolve. Build a sane PATH from
+// the user's actual environment plus a fallback list of common dev-tool dirs.
+// Captured at plist-generation time so each schedule gets the PATH of whoever
+// installed it; works across .bun/.local/.npm-global/homebrew layouts.
+function launchdPath(): string {
+  const home = homedir()
+  const fromEnv = (process.env.PATH || '').split(':').filter(Boolean)
+  const common = [
+    `${home}/.local/bin`,
+    `${home}/.bun/bin`,
+    `${home}/.npm-global/bin`,
+    `${home}/.cargo/bin`,
+    `${home}/go/bin`,
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+  ]
+  // Dedupe, keeping first-seen order (env wins over fallbacks).
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const p of [...fromEnv, ...common]) {
+    if (!p || seen.has(p)) continue
+    seen.add(p)
+    merged.push(p)
+  }
+  return merged.join(':')
 }
 
 function bootout(id: string): void {

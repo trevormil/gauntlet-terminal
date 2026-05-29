@@ -2,19 +2,42 @@
 // terminal-cron — headless runner for TerMinal scheduled agent runs.
 //
 // launchd invokes:  <bun> terminal-cron run <scheduleId>
+// also supported:   <bun> terminal-cron watchdog          (one-shot fleet check)
 //
 // SELF-CONTAINED on purpose: no imports from the TerMinal app bundle, so it
 // keeps working even if the app moves or is closed. Reads/writes only
 // ~/.config/TerMinal/*. The app installs an up-to-date copy to
 // ~/.config/TerMinal/bin/terminal-cron and points launchd at that stable path.
 //
-// Per run it: creates an isolated git worktree, runs codex/claude there, streams
-// the full log to disk, records a run with status, appends an activity event,
-// and stamps lastRun/lastStatus back onto the schedule.
+// Per run it:
+//   - sweeps stale runs (status:running with no live process for >2h) and
+//     marks them failed (the watchdog half — every run is also a heartbeat
+//     check for the fleet, so absence-of-scheduler-firing gets caught the
+//     next time any agent runs)
+//   - honors the kill-switch (~/.config/TerMinal/agents/disabled.json) and
+//     bails fast if this scheduleId is disabled
+//   - creates an isolated git worktree off the default base
+//   - runs codex / claude through `script -q /dev/null` so the wrapped CLI
+//     thinks it's in a TTY and streams stdout/stderr in real time to the
+//     run log (otherwise claude -p buffers everything until exit, and the
+//     log is empty until the run is over)
+//   - records the run, appends an activity event, stamps lastRun back onto
+//     the schedule
+//   - on failure: files a global HITL item + a backlog ticket on the
+//     affected repo (best-effort) + circuit-breaks the schedule after N
+//     consecutive failures (auto-disable + ping)
 
 import { spawn, execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, openSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  appendFileSync,
+  openSync,
+  readdirSync,
+} from 'node:fs'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
@@ -24,6 +47,20 @@ const RUNS_DIR = join(CFG, 'cron-runs')
 const WT_DIR = join(CFG, 'cron-worktrees')
 const ACTIVITY = join(CFG, 'activity.jsonl')
 const CRON_LOG = join(CFG, 'cron.log')
+const HITL_FILE = join(CFG, 'hitl.json')
+const SETTINGS_FILE = join(CFG, 'settings.json')
+const DISABLED_FILE = join(CFG, 'agents', 'disabled.json')
+
+// A run is "stale" if it claims status:running but no live process is attached
+// and it started more than this long ago. Catches runner death (terminal
+// closed, host crashed, OOM, launchd killed) which would otherwise leave the
+// record stuck at running forever.
+const STALE_MS = 2 * 60 * 60 * 1000 // 2 hours
+
+// Auto-disable after this many consecutive failures (kill-switch / circuit
+// breaker). Tunable per agent via .terminal/circuit-breaker.json in the future;
+// 3 is a sane default that survives transient flakes but stops runaway loops.
+const CIRCUIT_BREAK_AFTER = 3
 
 function log(msg) {
   try {
@@ -59,8 +96,8 @@ function activity(ev) {
   } catch {}
 }
 
-const HITL_FILE = join(CFG, 'hitl.json')
-const SETTINGS_FILE = join(CFG, 'settings.json')
+// ---- HITL + ticket on failure ----------------------------------------------
+
 // Auto-file a global HITL item on a failed cron run + best-effort Telegram ping
 // (works even with the app closed — reads the token straight from settings.json).
 function fileHitl(item) {
@@ -87,6 +124,203 @@ function fileHitl(item) {
     }
   } catch {}
 }
+
+// Best-effort: file a backlog ticket on the affected repo so the factory can
+// pick the failure up as work. Allocates NNNN by scanning the existing backlog
+// folder's filenames; doesn't depend on the project-template's bin/next-ticket-id.
+// Returns the ticket path on success, null otherwise.
+function fileTicket(repoRoot, { title, body, type = 'bug', priority = 'high' }) {
+  try {
+    const backlogDir = join(repoRoot, 'backlog')
+    if (!existsSync(backlogDir)) return null
+    const files = readdirSync(backlogDir).filter((f) => /^\d{4}-.*\.md$/.test(f))
+    const maxId = files.reduce((m, f) => Math.max(m, parseInt(f.slice(0, 4), 10)), 0)
+    const id = String(maxId + 1).padStart(4, '0')
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50) || 'cron-fail'
+    const path = join(backlogDir, `${id}-${slug}.md`)
+    const today = new Date().toISOString().slice(0, 10)
+    const fm = `---
+id: ${id}
+title: ${JSON.stringify(title)}
+status: open
+priority: ${priority}
+type: ${type}
+source: cron-fail
+created: ${today}
+updated: ${today}
+---
+
+${body}
+`
+    writeFileSync(path, fm)
+    return path
+  } catch (e) {
+    log(`failed to file ticket on ${repoRoot}: ${e}`)
+    return null
+  }
+}
+
+// ---- kill-switch / circuit-breaker -----------------------------------------
+
+function readDisabled() {
+  try {
+    const a = JSON.parse(readFileSync(DISABLED_FILE, 'utf8'))
+    const ids = Array.isArray(a) ? a : a?.scheduleIds || []
+    return new Set(ids)
+  } catch {
+    return new Set()
+  }
+}
+function writeDisabled(set) {
+  try {
+    mkdirSync(dirname(DISABLED_FILE), { recursive: true })
+    writeFileSync(DISABLED_FILE, JSON.stringify({ scheduleIds: [...set] }, null, 2))
+  } catch (e) {
+    log(`failed writing disabled: ${e}`)
+  }
+}
+
+// Read the most recent N runs for a given scheduleId, newest first.
+function recentRuns(scheduleId, limit = CIRCUIT_BREAK_AFTER) {
+  try {
+    if (!existsSync(RUNS_DIR)) return []
+    const recs = []
+    for (const f of readdirSync(RUNS_DIR)) {
+      if (!f.endsWith('.json')) continue
+      try {
+        const rec = JSON.parse(readFileSync(join(RUNS_DIR, f), 'utf8'))
+        if (rec.scheduleId === scheduleId) recs.push(rec)
+      } catch {}
+    }
+    return recs.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+// Trip the breaker if the last N runs were all failures. Returns true if we tripped.
+function maybeCircuitBreak(scheduleId, sched) {
+  const recent = recentRuns(scheduleId, CIRCUIT_BREAK_AFTER)
+  if (recent.length < CIRCUIT_BREAK_AFTER) return false
+  if (!recent.every((r) => r.status === 'failed')) return false
+  const set = readDisabled()
+  if (set.has(scheduleId)) return false // already disabled
+  set.add(scheduleId)
+  writeDisabled(set)
+  fileHitl({
+    title: `Circuit broken · ${sched.agentTitle}`,
+    action: `auto-disabled after ${CIRCUIT_BREAK_AFTER} consecutive failures — re-enable from the Schedules tab when fixed`,
+    detail: `schedule ${scheduleId} · ${sched.repoLabel}`,
+    repo: sched.repoLabel,
+    repoRoot: sched.repoRoot,
+  })
+  activity({
+    kind: 'blocked',
+    title: `Circuit broken · ${sched.agentTitle}`,
+    detail: `auto-disabled after ${CIRCUIT_BREAK_AFTER} fails`,
+    repo: sched.repoLabel,
+    repoRoot: sched.repoRoot,
+  })
+  log(`circuit-break: schedule ${scheduleId} (${sched.agentTitle}) disabled after ${CIRCUIT_BREAK_AFTER} fails`)
+  return true
+}
+
+// ---- watchdog / stale sweep ------------------------------------------------
+
+// Find runs claiming status:running for longer than STALE_MS and finalize them
+// as failed. Run at the start of every cron invocation so we self-heal even
+// without a dedicated watchdog schedule. Returns the number of records swept.
+function sweepStaleRuns() {
+  if (!existsSync(RUNS_DIR)) return 0
+  let swept = 0
+  try {
+    for (const f of readdirSync(RUNS_DIR)) {
+      if (!f.endsWith('.json')) continue
+      const path = join(RUNS_DIR, f)
+      let rec
+      try {
+        rec = JSON.parse(readFileSync(path, 'utf8'))
+      } catch {
+        continue
+      }
+      if (rec.status !== 'running') continue
+      if (!rec.startedAt || Date.now() - rec.startedAt < STALE_MS) continue
+      const finalized = {
+        ...rec,
+        status: 'failed',
+        endedAt: Date.now(),
+        error: 'stale: runner exited without finalizing the run (swept by watchdog)',
+      }
+      writeFileSync(path, JSON.stringify(finalized, null, 2))
+      if (rec.scheduleId) stamp(rec.scheduleId, { lastStatus: 'failed' })
+      fileHitl({
+        title: `Cron run stale · ${rec.agentTitle || rec.agentId}`,
+        action: 'runner died mid-run — swept by watchdog and marked failed',
+        detail: `run ${rec.id} · ${rec.branch || ''}`,
+        repo: rec.repoLabel,
+        repoRoot: rec.repoRoot,
+      })
+      if (rec.repoRoot) {
+        fileTicket(rec.repoRoot, {
+          title: `Cron run stale: ${rec.agentTitle || rec.agentId}`,
+          body: `The scheduled run for **${rec.agentTitle || rec.agentId}** (branch \`${rec.branch}\`) was running for >2h with no live process and was swept by the watchdog.\n\n- run id: \`${rec.id}\`\n- log: \`~/.config/TerMinal/cron-runs/${rec.id}.log\`\n- worktree: \`${rec.worktree}\`\n\nInvestigate why the runner died mid-run (terminal closed, OOM, launchd killed, network hang). Fix the root cause; re-enable the schedule in the Schedules tab if the circuit-breaker tripped.`,
+          type: 'bug',
+          priority: 'high',
+        })
+      }
+      swept++
+      log(`watchdog: marked ${rec.id} stale`)
+    }
+  } catch (e) {
+    log(`watchdog sweep failed: ${e}`)
+  }
+  return swept
+}
+
+// Cadence health check: for each enabled schedule, compare expected interval
+// against `lastRun`. If the schedule should have fired more than 2x its
+// cadence ago and there's no recent run, file a HITL — launchd may have
+// unloaded it or the plist drifted. Returns the number of overdue items.
+function watchdogCadenceCheck() {
+  const schedules = readSchedules()
+  let overdue = 0
+  const now = Date.now()
+  for (const s of schedules) {
+    if (!s.enabled) continue
+    // Only intervals have a predictable next-firing; calendar/cron we leave
+    // alone for now (LaunchAgents fire at the calendar moment, so "missed
+    // by 2x the cadence" doesn't generalize cleanly).
+    const intervalMs = s.spec?.kind === 'interval' ? (s.spec.everyMinutes || 60) * 60_000 : null
+    if (!intervalMs) continue
+    if (!s.lastRun) continue // never run yet — let it ride
+    const since = now - s.lastRun
+    if (since < intervalMs * 2) continue
+    overdue++
+    fileHitl({
+      title: `Schedule overdue · ${s.agentTitle}`,
+      action: `expected every ${Math.round(intervalMs / 60_000)} min, last ran ${Math.round(since / 60_000)} min ago — check launchd plist`,
+      detail: `schedule ${s.id} · ${s.repoLabel}`,
+      repo: s.repoLabel,
+      repoRoot: s.repoRoot,
+    })
+    activity({
+      kind: 'blocked',
+      title: `Schedule overdue · ${s.agentTitle}`,
+      detail: `${Math.round(since / 60_000)} min since last run`,
+      repo: s.repoLabel,
+      repoRoot: s.repoRoot,
+    })
+    log(`watchdog: schedule ${s.id} (${s.agentTitle}) overdue by ${Math.round(since / 60_000)} min`)
+  }
+  return overdue
+}
+
+// ---- git / quoting ---------------------------------------------------------
+
 const git = (repo, args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`
@@ -102,8 +336,14 @@ function defaultBase(repo) {
   }
 }
 
+// ---- run a schedule --------------------------------------------------------
+
 async function runSchedule(id) {
   mkdirSync(RUNS_DIR, { recursive: true })
+
+  // Every cron invocation is also a heartbeat sweep — cheap and self-healing.
+  sweepStaleRuns()
+
   const sched = readSchedules().find((s) => s.id === id)
   if (!sched) {
     log(`run: schedule ${id} not found — skipping`)
@@ -111,6 +351,10 @@ async function runSchedule(id) {
   }
   if (sched.enabled === false) {
     log(`run: schedule ${id} disabled — skipping`)
+    return 0
+  }
+  if (readDisabled().has(id)) {
+    log(`run: schedule ${id} kill-switched (agents/disabled.json) — skipping`)
     return 0
   }
 
@@ -180,19 +424,33 @@ async function runSchedule(id) {
       repo: sched.repoLabel,
       repoRoot: repo,
     })
+    fileTicket(repo, {
+      title: `Cron run failed: ${sched.agentTitle} (worktree setup)`,
+      body: `Worktree setup failed for the scheduled \`${sched.agentTitle}\` run.\n\n\`\`\`\n${msg}\n\`\`\`\n\n- schedule: \`${id}\`\n- run: \`${runId}\`\n- log: \`~/.config/TerMinal/cron-runs/${runId}.log\``,
+    })
+    maybeCircuitBreak(id, sched)
     return 1
   }
 
+  // Inner command — same as before; what changes is the wrapper.
   const cmd =
     sched.engine === 'claude'
       ? `claude -p ${shq(sched.prompt)} --dangerously-skip-permissions`
       : `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(sched.prompt)}`
   const shell = process.env.SHELL || '/bin/zsh'
-  const fd = openSync(logFile, 'a')
   writeFileSync(logFile, `▸ ${sched.agentTitle} · ${sched.engine}\n▸ branch ${branch}\n▸ ${cmd}\n\n`)
+  const fd = openSync(logFile, 'a')
 
+  // Wrap in `script -q /dev/null` so the wrapped CLI sees a pseudo-TTY and
+  // streams stdout/stderr in real time. Without this, `claude -p` (and codex)
+  // buffer everything until exit and the log is unreadable mid-run.
+  // `script` is in /usr/bin on macOS by default.
   const code = await new Promise((resolve) => {
-    const p = spawn(shell, ['-l', '-c', cmd], { cwd: worktree, env: process.env, stdio: ['ignore', fd, fd] })
+    const p = spawn('script', ['-q', '/dev/null', shell, '-l', '-c', cmd], {
+      cwd: worktree,
+      env: process.env,
+      stdio: ['ignore', fd, fd],
+    })
     p.on('error', (err) => {
       appendFileSync(logFile, `\n[spawn error] ${err.message}\n`)
       resolve(1)
@@ -218,15 +476,40 @@ async function runSchedule(id) {
       repo: sched.repoLabel,
       repoRoot: repo,
     })
+    fileTicket(repo, {
+      title: `Cron run failed: ${sched.agentTitle} (exit ${code})`,
+      body: `The scheduled \`${sched.agentTitle}\` run exited with code ${code}.\n\n- schedule: \`${id}\`\n- run: \`${runId}\`\n- branch: \`${branch}\`\n- worktree: \`${worktree}\`\n- log: \`~/.config/TerMinal/cron-runs/${runId}.log\`\n\nInvestigate the log and fix the underlying issue; circuit-breaker auto-disables after ${CIRCUIT_BREAK_AFTER} consecutive failures.`,
+    })
+    maybeCircuitBreak(id, sched)
   }
   log(`run ${runId}: ${status} (exit ${code})`)
   return code === 0 ? 0 : 1
 }
 
+// ---- watchdog one-shot -----------------------------------------------------
+
+async function runWatchdog() {
+  log('watchdog: tick')
+  const swept = sweepStaleRuns()
+  const overdue = watchdogCadenceCheck()
+  log(`watchdog: swept=${swept} overdue=${overdue}`)
+  activity({
+    kind: 'check',
+    title: `Watchdog · swept ${swept} stale · ${overdue} overdue`,
+    detail: 'fleet heartbeat',
+  })
+  return 0
+}
+
+// ---- entrypoint ------------------------------------------------------------
+
 const [, , action, arg] = process.argv
 if (action === 'run' && arg) {
   runSchedule(arg).then((c) => process.exit(c))
+} else if (action === 'watchdog') {
+  runWatchdog().then((c) => process.exit(c))
 } else {
   console.error('usage: terminal-cron run <scheduleId>')
+  console.error('       terminal-cron watchdog')
   process.exit(2)
 }

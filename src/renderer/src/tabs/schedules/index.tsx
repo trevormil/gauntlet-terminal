@@ -195,11 +195,14 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
   const [view, setView] = useState<'schedules' | 'runs'>('schedules')
   const [repo, setRepo] = useState('') // '' = all repos
   const [allRuns, setAllRuns] = useState<CronRun[] | null>(null)
+  const [disabled, setDisabledIds] = useState<Set<string>>(new Set())
 
   const reload = () => window.gt.schedules.list().then(setSchedules)
   const reloadRuns = () => window.gt.schedules.runs().then(setAllRuns)
+  const reloadDisabled = () => window.gt.schedules.disabledList().then((ids) => setDisabledIds(new Set(ids)))
   useEffect(() => {
     reload()
+    reloadDisabled()
     window.gt.agents.list().then(setAgents)
   }, [ctx.sessionId])
   useEffect(() => {
@@ -372,6 +375,19 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                     <span className="text-[10px] uppercase text-zinc-600">{s.engine}</span>
                     {s.lastStatus && s.lastStatus !== 'never' && (
                       <Badge tone={statusTone(s.lastStatus)}>{s.lastStatus}</Badge>
+                    )}
+                    {disabled.has(s.id) && (
+                      <button
+                        onClick={async () => {
+                          await window.gt.schedules.disabledToggle(s.id, false)
+                          reloadDisabled()
+                          flash(`${s.agentTitle} · re-enabled`)
+                        }}
+                        title="Auto-disabled by the circuit-breaker after consecutive failures. Click to re-enable."
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--gt-red)]/60 bg-[var(--gt-red)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--gt-red)] hover:bg-[var(--gt-red)]/20"
+                      >
+                        kill-switch · re-enable
+                      </button>
                     )}
                   </div>
                   <div className="mt-0.5 text-[11px] text-zinc-500">

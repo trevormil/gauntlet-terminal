@@ -88,6 +88,9 @@ const gt = {
     runLog: (runId: string) => ipcRenderer.invoke('schedules:run-log', runId),
     reconcile: () => ipcRenderer.invoke('schedules:reconcile'),
     removeAll: () => ipcRenderer.invoke('schedules:remove-all'),
+    disabledList: () => ipcRenderer.invoke('schedules:disabled-list'),
+    disabledToggle: (id: string, disabled: boolean) =>
+      ipcRenderer.invoke('schedules:disabled-toggle', id, disabled),
   },
   hitl: {
     list: () => ipcRenderer.invoke('hitl:list'),
