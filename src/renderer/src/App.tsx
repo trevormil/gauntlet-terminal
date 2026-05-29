@@ -142,14 +142,14 @@ export default function App() {
           fullscreen ? 'pl-3' : 'pl-[78px]'
         }`}
       >
-        {/* brand mark — overflow-clip + scale crops the logo PNG's baked-in
-            padding so the glyph fills the box instead of floating */}
+        {/* brand mark — the logo asset is already tightly cropped, so it fills
+            the box at scale-1 (no extra zoom) */}
         <div className="mr-2.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center overflow-hidden rounded-[5px]">
           <img
             src={logo}
             alt="TerMinal"
             draggable={false}
-            className="h-full w-full scale-[1.28] object-cover"
+            className="h-full w-full object-cover"
           />
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
