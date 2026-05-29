@@ -98,6 +98,7 @@ export type Ticket = {
   updated: string
   prs: string[]
   refs: string[]
+  depends_on: number[]
   body: string
 }
 

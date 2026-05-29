@@ -388,6 +388,11 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                           )}
                           {t.horizon !== 'now' && <Badge tone={horizonTone(t.horizon)}>{t.horizon}</Badge>}
                           <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>
+                          {t.depends_on.length > 0 &&
+                            t.depends_on.some((id) => {
+                              const dep = tickets?.find((x) => x.id === id)
+                              return !dep || dep.status !== 'closed'
+                            }) && <Badge tone="red">blocked</Badge>}
                         </div>
                         {t.prs.length > 0 && (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] text-zinc-600">
@@ -470,6 +475,35 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                 {selected.created && <span>created {selected.created}</span>}
                 {selected.updated && <span>updated {selected.updated}</span>}
               </div>
+              {selected.depends_on.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <span className="text-[10.5px] uppercase tracking-wider text-zinc-600">depends on</span>
+                  {selected.depends_on.map((depId) => {
+                    const dep = tickets?.find((t) => t.id === depId)
+                    const blocked = dep && dep.status !== 'closed'
+                    return (
+                      <button
+                        key={depId}
+                        onClick={() => dep && setSel(dep.slug)}
+                        title={
+                          dep
+                            ? `${dep.title} · ${dep.status}${blocked ? ' (blocking this)' : ''}`
+                            : `#${depId} not found in this backlog`
+                        }
+                        disabled={!dep}
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-50 ${
+                          blocked
+                            ? 'border-[var(--gt-red)]/50 bg-[var(--gt-red)]/10 text-[var(--gt-red)] hover:bg-[var(--gt-red)]/20'
+                            : 'border-[var(--gt-border)] bg-[var(--gt-panel)] text-zinc-300 hover:border-[var(--gt-accent)]/50'
+                        }`}
+                      >
+                        <span className="font-mono">#{String(depId).padStart(4, '0')}</span>
+                        {dep && <span className="text-[10px] text-zinc-500">{dep.status}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
               {selected.prs.length > 0 && (
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {selected.prs.map((p) => {

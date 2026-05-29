@@ -18,6 +18,7 @@ export type Ticket = {
   updated: string
   prs: string[]
   refs: string[]
+  depends_on: number[] // ticket ids this one is blocked by (parsed from frontmatter)
   body: string
 }
 
@@ -51,8 +52,22 @@ function toTicket(slug: string, md: string): Ticket {
     updated: str(fm.updated),
     prs: arr(fm.prs),
     refs: arr(fm.refs),
+    depends_on: depsArr(fm.depends_on),
     body: body.trim(),
   }
+}
+
+// depends_on is a list of ticket IDs (numbers). YAML may parse them as
+// numbers or as strings ("0042"); coerce either way and drop anything that
+// isn't a positive integer.
+function depsArr(v: unknown): number[] {
+  if (!Array.isArray(v)) return []
+  const out: number[] = []
+  for (const x of v) {
+    const n = typeof x === 'number' ? x : typeof x === 'string' ? parseInt(x, 10) : NaN
+    if (Number.isFinite(n) && n > 0) out.push(n)
+  }
+  return out
 }
 
 export function listTickets(repoRoot: string): Ticket[] {
@@ -145,6 +160,7 @@ export function createTicket(repoRoot: string, input: NewTicket): Ticket {
     updated: today(),
     prs: [],
     refs: [],
+    depends_on: [],
     body: input.body || '',
   }
   const fm = [
