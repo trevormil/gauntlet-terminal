@@ -183,16 +183,6 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
       .catch(() => setMrByIid(new Map()))
   }, [ctx.sessionId])
 
-  // Aggregate tone for a ticket's MRs in the compact list (green if any landed/
-  // approved, amber if any wants changes, neutral otherwise).
-  const ticketMrTone = (t: Ticket): BadgeTone => {
-    const mrs = t.prs.map(prIidFromUrl).map((i) => (i != null ? mrByIid.get(i) : undefined))
-    if (mrs.some((m) => m?.state === 'merged' || m?.review?.verdict === 'approve')) return 'green'
-    if (mrs.some((m) => m?.review?.verdict === 'request-changes' || m?.review?.verdict === 'blocked'))
-      return 'warn'
-    return 'blue'
-  }
-
   const filtered = (tickets || []).filter((t) => {
     if (hitlOnly && !t.hitl) return false
     if (!hitlOnly) {
@@ -314,25 +304,50 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                           setSel(t.slug)
                           setCreating(false)
                         }}
-                        className={`flex w-full items-center gap-2 border-b border-[var(--gt-border)]/40 py-2.5 pl-7 pr-4 text-left hover:bg-white/5 ${
+                        className={`flex w-full flex-col gap-1 border-b border-[var(--gt-border)]/40 py-2.5 pl-7 pr-4 text-left hover:bg-white/5 ${
                           sel === t.slug ? 'bg-white/5' : ''
                         }`}
                       >
-                        <span className="font-mono text-[11px] text-zinc-600">#{t.id}</span>
-                        <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{t.title}</span>
+                        <div className="flex w-full items-center gap-2">
+                          <span className="font-mono text-[11px] text-zinc-600">#{t.id}</span>
+                          <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{t.title}</span>
+                          {t.hitl && !hitlOnly && (
+                            <Badge tone="red">
+                              <Hand size={10} strokeWidth={2.25} />
+                            </Badge>
+                          )}
+                          {t.horizon !== 'now' && <Badge tone={horizonTone(t.horizon)}>{t.horizon}</Badge>}
+                          <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>
+                        </div>
                         {t.prs.length > 0 && (
-                          <Badge tone={ticketMrTone(t)}>
-                            <GitPullRequest size={10} strokeWidth={2.25} />
-                            {t.prs.length}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] text-zinc-600">
+                            {t.prs.map((p) => {
+                              const iid = prIidFromUrl(p)
+                              if (iid == null) return null
+                              const mr = mrByIid.get(iid)
+                              return (
+                                <span key={p} className="inline-flex items-center gap-1">
+                                  <GitPullRequest size={9} strokeWidth={2} className="text-zinc-700" />
+                                  <span className="text-zinc-500">
+                                    {ctx.forgeSym}
+                                    {ctx.forgeLabel}
+                                    {iid}
+                                  </span>
+                                  {mr && (
+                                    <span className={`uppercase ${TONE_TEXT[stateTone(mr.state)]}`}>
+                                      — {mr.state}
+                                    </span>
+                                  )}
+                                  {mr?.review?.verdict && (
+                                    <span className={TONE_TEXT[verdictTone(mr.review.verdict)]}>
+                                      · {mr.review.verdict}
+                                    </span>
+                                  )}
+                                </span>
+                              )
+                            })}
+                          </div>
                         )}
-                        {t.hitl && !hitlOnly && (
-                          <Badge tone="red">
-                            <Hand size={10} strokeWidth={2.25} />
-                          </Badge>
-                        )}
-                        {t.horizon !== 'now' && <Badge tone={horizonTone(t.horizon)}>{t.horizon}</Badge>}
-                        <Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>
                       </button>
                     ))}
                 </div>
@@ -386,7 +401,7 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                 {selected.updated && <span>updated {selected.updated}</span>}
               </div>
               {selected.prs.length > 0 && (
-                <div className="mb-3 flex flex-col items-start gap-1">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   {selected.prs.map((p) => {
                     const iid = prIidFromUrl(p)
                     if (iid == null)
@@ -394,7 +409,7 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                         <button
                           key={p}
                           onClick={() => window.gt.openExternal(p)}
-                          className="inline-flex items-center gap-0.5 text-[11px] text-zinc-500 hover:text-[var(--gt-accent-2)] hover:underline"
+                          className="inline-flex items-center gap-0.5 text-[11px] text-[var(--gt-accent-2)] hover:underline"
                         >
                           {p.replace(/^https?:\/\/[^/]+\//, '')}
                           <ArrowUpRight size={11} strokeWidth={2} />
@@ -406,28 +421,17 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                         key={p}
                         onClick={() => setViewMrIid(iid)}
                         title={`View ${ctx.forgeLabel} ${ctx.forgeSym}${iid} in-app`}
-                        className="group flex w-fit flex-col items-start gap-0.5 rounded-md px-1.5 py-0.5 text-left hover:bg-white/5"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] px-2 py-1 text-[11px] hover:border-[var(--gt-accent)]/50 hover:bg-white/5"
                       >
-                        <span className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <GitPullRequest size={11} strokeWidth={2} className="text-zinc-600" />
-                          <span className="text-zinc-300 group-hover:text-[var(--gt-accent-light)]">
-                            {ctx.forgeSym}
-                            {ctx.forgeLabel}
-                            {iid}
-                          </span>
-                          {mr && (
-                            <span className={`uppercase ${TONE_TEXT[stateTone(mr.state)]}`}>— {mr.state}</span>
-                          )}
+                        <GitPullRequest size={12} strokeWidth={2} className="text-zinc-500" />
+                        <span className="font-mono text-zinc-300">
+                          {ctx.forgeSym}
+                          {ctx.forgeLabel}
+                          {iid}
                         </span>
-                        {mr?.review && (
-                          <span className="flex items-center gap-1.5 pl-[18px] text-[10px] text-zinc-600">
-                            <span className={TONE_TEXT[verdictTone(mr.review.verdict)]}>{mr.review.verdict}</span>
-                            <span className="text-zinc-700">·</span>
-                            <span className={TONE_TEXT[testTone(mr.review.testStatus)]}>
-                              tests {mr.review.testStatus}
-                            </span>
-                          </span>
-                        )}
+                        {mr && <Badge tone={stateTone(mr.state)}>{mr.state}</Badge>}
+                        {mr?.review && <Badge tone={verdictTone(mr.review.verdict)}>{mr.review.verdict}</Badge>}
+                        {mr?.review && <Badge tone={testTone(mr.review.testStatus)}>tests {mr.review.testStatus}</Badge>}
                       </button>
                     )
                   })}
