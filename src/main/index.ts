@@ -62,6 +62,7 @@ import {
   runDesignerSpawn,
   runScheduleDesignerSpawn,
   locateScript,
+  convertAgentToScript,
   runPrAgent,
   listPipelines,
   listRuns,
@@ -453,6 +454,9 @@ ipcMain.handle('agents:reset', (_e, id: string) => resetAgent(repoRootOf(cur().c
 // Read the script body for an agent if .agents/<id>.sh (or global) exists. Returns
 // { path, body } when found, null otherwise — used by the Agents tab to render
 // the bash inline alongside the prompt.
+ipcMain.handle('agents:convert', (_e, id: string) =>
+  convertAgentToScript(repoRootOf(cur().cwd) || '', id),
+)
 ipcMain.handle('agents:script', (_e, id: string) => {
   const root = repoRootOf(cur().cwd) || ''
   const p = locateScript(root, id)

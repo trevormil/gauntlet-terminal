@@ -559,11 +559,32 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                           <>
                             <div className="flex items-center gap-1.5 text-[10px]">
                               <Badge tone="mute">prompt</Badge>
-                              <span className="text-zinc-700">
+                              <span className="min-w-0 flex-1 truncate text-zinc-700">
                                 {scripts[a.id] === null
-                                  ? '(no .agents/' + a.id + '.sh — runs as a single claude/codex prompt)'
+                                  ? `no .agents/${a.id}.sh — runs as a single claude/codex prompt`
                                   : 'loading…'}
                               </span>
+                              {scripts[a.id] === null && (
+                                <button
+                                  onClick={async () => {
+                                    const r = await window.gt.agents.convert(a.id)
+                                    if ('error' in r) {
+                                      alert(`convert failed: ${r.error}`)
+                                      return
+                                    }
+                                    // Refresh the cached script for this agent so the bash shows immediately.
+                                    setScripts((m) => ({ ...m, [a.id]: { path: r.scriptPath, body: '' } }))
+                                    window.gt.agents.script(a.id).then((s) =>
+                                      setScripts((m) => ({ ...m, [a.id]: s })),
+                                    )
+                                    reloadAgents()
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-accent)]/50 bg-[var(--gt-accent)]/10 px-1.5 py-0.5 text-[var(--gt-accent-light)] hover:bg-[var(--gt-accent)]/20"
+                                  title="Materialize this prompt-style agent as .agents/<id>.sh + sidecar so you can edit it as bash and mix deterministic checks with LLM calls."
+                                >
+                                  convert to script
+                                </button>
+                              )}
                             </div>
                             <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-black/30 p-2 font-mono text-[10.5px] leading-relaxed text-zinc-400">
                               {a.prompt}
