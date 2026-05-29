@@ -3,3 +3,5 @@ out
 dist
 *.log
 .DS_Store
+# Per-repo TerMinal runtime state (notes, widgets) — local to each checkout.
+.TerMinal/

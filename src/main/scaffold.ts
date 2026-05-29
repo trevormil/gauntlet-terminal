@@ -57,9 +57,9 @@ export function scaffoldProject(name: string, parentDir?: string): ScaffoldResul
         env: {
           ...process.env,
           GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || 'TerMinal',
-          GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || 'noreply@gauntlet.local',
+          GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || 'noreply@terminal.local',
           GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || 'TerMinal',
-          GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || 'noreply@gauntlet.local',
+          GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || 'noreply@terminal.local',
         },
       })
     git('init', '-q')
