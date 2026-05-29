@@ -95,6 +95,10 @@ const gt = {
     resolve: (id: string, resolved?: boolean) => ipcRenderer.invoke('hitl:resolve', id, resolved),
     remove: (id: string) => ipcRenderer.invoke('hitl:remove', id),
   },
+  factory: {
+    health: () => ipcRenderer.invoke('factory:health'),
+    start: (engine: string) => ipcRenderer.invoke('factory:start', engine),
+  },
 
   // activity feed + notifications
   activity: {

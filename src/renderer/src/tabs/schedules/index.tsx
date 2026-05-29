@@ -368,6 +368,11 @@ const tab: Tab = {
   icon: CalendarClock,
   order: 3.5, // right after Agents — the software-factory backbone
   appliesTo: () => true,
+  // badge = cron runs that failed in the last 24h
+  badge: async (gt) => {
+    const day = Date.now() - 86_400_000
+    return (await gt.schedules.runs()).filter((r) => r.status === 'failed' && r.startedAt >= day).length
+  },
   Component: SchedulesTab,
 }
 export default tab

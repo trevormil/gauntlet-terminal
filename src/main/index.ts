@@ -56,6 +56,7 @@ import {
   runAgent,
   runTicketAgent,
   runTicketSpawn,
+  runFactorySpawn,
   runPrAgent,
   listPipelines,
   listRuns,
@@ -85,6 +86,7 @@ import {
 } from './launchd'
 import { readCronRuns, readCronRunLog } from './cron-runs'
 import { readHitl, fileHitl, resolveHitl, removeHitl, type HitlItem } from './hitl'
+import { factoryHealth } from './factory-health'
 import { describeSpec, nextRun, type ScheduleSpec } from './cron'
 import { readPersonas } from './personas'
 
@@ -489,11 +491,8 @@ ipcMain.handle(
     }
     const sched = input.id ? updateSchedule(input.id, base) : addSchedule(base)
     if (!sched) return { error: 'schedule not found' }
-    try {
-      syncSchedule(sched)
-    } catch (e) {
-      return { error: `launchd: ${(e as Error).message}` }
-    }
+    const r = syncSchedule(sched)
+    if (!r.ok) return { error: `launchd: ${r.error}` }
     return { ok: true, id: sched.id }
   },
 )
@@ -525,6 +524,9 @@ ipcMain.handle('hitl:list', () => readHitl())
 ipcMain.handle('hitl:file', (_e, item: Omit<HitlItem, 'id' | 'status' | 'createdAt'>) => fileHitl(item))
 ipcMain.handle('hitl:resolve', (_e, id: string, resolved?: boolean) => resolveHitl(id, resolved ?? true))
 ipcMain.handle('hitl:remove', (_e, id: string) => removeHitl(id))
+// Factory: read-only cross-repo health roll-up + start the orchestrator in-place.
+ipcMain.handle('factory:health', () => factoryHealth())
+ipcMain.handle('factory:start', (_e, engine: Engine) => runFactorySpawn(repoRootOf(cur().cwd), engine || 'codex'))
 ipcMain.handle('schedules:remove-all', () => {
   const n = removeAllJobs()
   for (const s of readSchedules()) removeSchedule(s.id)

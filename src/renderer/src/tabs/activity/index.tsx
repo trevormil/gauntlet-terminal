@@ -119,6 +119,8 @@ function ActivityTab({ ctx }: { ctx: TabContext }) {
   const newest = useRef<string>('') // id of the most recent event, for the live flash
 
   useEffect(() => {
+    // viewing the feed clears the unseen-high-signal tab badge
+    localStorage.setItem('gt.activity.lastSeen', String(Date.now()))
     window.gt.activity.list().then((e) => {
       setEvents(e)
       newest.current = e[0]?.id || ''
@@ -290,6 +292,12 @@ const tab: Tab = {
   icon: Activity,
   order: 5,
   appliesTo: () => true, // global feed, always available
+  // badge = unseen high-signal events (errors, blockers, test fails) since last view
+  badge: async (gt) => {
+    const seen = Number(localStorage.getItem('gt.activity.lastSeen') || 0)
+    const hi = new Set(['error', 'blocked', 'tests-fail'])
+    return (await gt.activity.list()).filter((e) => e.ts > seen && hi.has(e.kind)).length
+  },
   Component: ActivityTab,
 }
 export default tab

@@ -100,20 +100,29 @@ function bootout(id: string): void {
     /* not loaded */
   }
 }
-function bootstrap(id: string): void {
+// Returns whether the job is actually loaded afterward (verified via print), so
+// callers can surface a silent launchd bind/load failure instead of swallowing it.
+function bootstrap(id: string): boolean {
   try {
     execFileSync('launchctl', ['bootstrap', domain, plistPath(id)], { stdio: 'ignore' })
   } catch {
     try {
       execFileSync('launchctl', ['load', plistPath(id)], { stdio: 'ignore' }) // older macOS fallback
     } catch {
-      /* best effort */
+      /* best effort — verified below */
     }
+  }
+  try {
+    execFileSync('launchctl', ['print', `${domain}/${label(id)}`], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
   }
 }
 
 // Write + (re)load the plist for an enabled schedule; unload + delete if disabled.
-export function syncSchedule(s: Schedule): void {
+// Returns ok=false (with a reason) if launchd didn't actually load the job.
+export function syncSchedule(s: Schedule): { ok: boolean; error?: string } {
   mkdirSync(LA_DIR, { recursive: true })
   bootout(s.id) // idempotent reload
   if (!s.enabled) {
@@ -122,10 +131,16 @@ export function syncSchedule(s: Schedule): void {
     } catch {
       /* ignore */
     }
-    return
+    return { ok: true }
   }
-  writeFileSync(plistPath(s.id), plistXml(s))
-  bootstrap(s.id)
+  try {
+    writeFileSync(plistPath(s.id), plistXml(s))
+  } catch (e) {
+    return { ok: false, error: `write plist: ${(e as Error).message}` }
+  }
+  return bootstrap(s.id)
+    ? { ok: true }
+    : { ok: false, error: 'launchctl did not load the job — check Console.app / the plist' }
 }
 
 export function unscheduleJob(id: string): void {

@@ -445,7 +445,9 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
     persistMeta(run)
     emit('agent:status', run)
     emitActivity({
-      kind: 'agent-run',
+      // infra/run failures surface as 'error' (notify) so they don't hide in the
+      // agent-run stream; normal completions stay 'agent-run'.
+      kind: status === 'failed' || status === 'interrupted' ? 'error' : 'agent-run',
       title: `Agent ${status} · ${spec.title}`,
       detail: `${spec.engine} · ${branch}`,
       repo: repoLabel,
@@ -526,6 +528,20 @@ export function runTicketSpawn(
     id: 'ticket-spawn',
     title: `File ticket · ${t.slice(0, 48)}`,
     steps: [{ label: 'file ticket', prompt }],
+    engine,
+    inPlace: true,
+  })
+}
+
+/** Start the /factory orchestrator as an in-place run — drives the backlog to
+ *  merge-ready PRs (stacked-mr passes, gated by review), never merging to main. */
+export function runFactorySpawn(repoRoot: string, engine: Engine): AgentRun | { error: string } {
+  if (!repoRoot) return { error: 'not a git repo' }
+  const prompt = `Run the /factory orchestrator for THIS repository, following the project's /factory skill exactly. Continuously turn the backlog into REVIEWED, merge-ready PRs: reconcile with /merge-sync, then run /stacked-mr passes (build a stack TDD-first → batch-review to the bar → handle verdicts), repeating until the in-scope backlog is dry. NEVER merge to main/master — the human merges. Park any TRUE human-need (decision, approval, creds, hard blocker) to the global HITL inbox with .claude/bin/hitl. Emit an activity event at each checkpoint. Do not invent scope. End with the stack summary for the human to merge.`
+  return runSpec(repoRoot, {
+    id: 'factory',
+    title: 'Factory',
+    steps: [{ label: 'factory loop', prompt }],
     engine,
     inPlace: true,
   })

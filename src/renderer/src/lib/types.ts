@@ -206,6 +206,32 @@ export type Schedule = {
   describe?: string
   nextRun?: number | null
 }
+export type WindowStats = {
+  events: number
+  ticketsFiled: number
+  ticketsClosed: number
+  prsOpened: number
+  prsMerged: number
+  reviews: number
+  testsPass: number
+  testsFail: number
+  agentRuns: number
+  checks: number
+  docs: number
+  blocked: number
+}
+export type RunStats = { total: number; done: number; failed: number; running: number; successRate: number }
+export type FactoryHealth = {
+  generatedAt: number
+  window24h: WindowStats
+  window7d: WindowStats
+  agents: RunStats
+  cron: RunStats & { recentFailures: number }
+  hitlOpen: number
+  recentFailures: { title: string; ts: number; repo: string; kind: string }[]
+  daily: { day: string; count: number }[]
+  byRepo: { repo: string; events: number }[]
+}
 export type HitlSource = 'manual' | 'cron-fail' | 'agent' | 'factory' | 'skill'
 export type HitlItem = {
   id: string
@@ -448,6 +474,10 @@ export type GtApi = {
     file: (item: Omit<HitlItem, 'id' | 'status' | 'createdAt'>) => Promise<HitlItem>
     resolve: (id: string, resolved?: boolean) => Promise<boolean>
     remove: (id: string) => Promise<boolean>
+  }
+  factory: {
+    health: () => Promise<FactoryHealth>
+    start: (engine: Engine) => Promise<AgentRun | { error: string }>
   }
   activity: {
     list: () => Promise<ActivityEvent[]>
