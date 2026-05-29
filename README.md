@@ -18,7 +18,10 @@ TerMinal hosts the real [Claude Code](https://claude.com/claude-code) CLI (and
 its own PTY — and wraps them in a continuous, observable build loop: backlog →
 branch → PR → review → **you** merge. The human gate to `main` is never crossed
 by the app; agents stop at "PR open" and park anything that needs you to a
-global inbox.
+global inbox. The workflow it drives is
+**[project-template](https://github.com/trevormil/project-template)** — a
+drop-in scaffold (sessions → tickets → branches → PRs → review → human merge,
+with a TDD gate and in-repo `.reviews/`) you can [add to any repo](#project-template).
 
 **Local-first.** No server, no account, no phone-home. Every artifact — the
 activity feed, HITL inbox, schedules, run logs, code-review results — lives on
