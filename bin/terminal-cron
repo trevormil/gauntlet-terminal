@@ -477,27 +477,56 @@ async function runSchedule(id) {
     return 1
   }
 
-  // Inner command — same as before; what changes is the wrapper.
   // Optional per-schedule model alias (claude: haiku/sonnet/opus; codex: model
   // name). Lets a lightweight schedule (health, deps-quality) avoid burning the
   // biggest model on every run.
   const modelFlag = sched.model ? ` --model ${shq(sched.model)}` : ''
-  const cmd =
-    sched.engine === 'claude'
+
+  // Script-first: if .agents/<id>.sh (or a global script) exists, exec it
+  // directly with env vars instead of building a claude/codex command from
+  // the schedule's prompt snapshot. The script body decides whether to call
+  // claude -p / codex exec / pure shell — perfect for cheap-then-escalate
+  // pipelines that only pay for an LLM when a precheck fails.
+  const perRepoScript = join(repo, '.agents', `${sched.agentId}.sh`)
+  const globalScript = join(CFG, 'scripts', `${sched.agentId}.sh`)
+  const scriptPath = existsSync(perRepoScript)
+    ? perRepoScript
+    : existsSync(globalScript)
+      ? globalScript
+      : null
+  const cmd = scriptPath
+    ? shq(scriptPath)
+    : sched.engine === 'claude'
       ? `claude -p ${shq(sched.prompt)} --dangerously-skip-permissions${modelFlag}`
       : `codex exec -s danger-full-access -C ${shq(worktree)}${modelFlag} ${shq(sched.prompt)}`
   const shell = process.env.SHELL || '/bin/zsh'
-  writeFileSync(logFile, `▸ ${sched.agentTitle} · ${sched.engine}\n▸ branch ${branch}\n▸ ${cmd}\n\n`)
+  writeFileSync(
+    logFile,
+    `▸ ${sched.agentTitle} · ${sched.engine}\n▸ branch ${branch}\n▸ ${scriptPath ? `exec ${scriptPath}` : cmd}\n\n`,
+  )
   const fd = openSync(logFile, 'a')
 
   // Wrap in `script -q /dev/null` so the wrapped CLI sees a pseudo-TTY and
   // streams stdout/stderr in real time. Without this, `claude -p` (and codex)
   // buffer everything until exit and the log is unreadable mid-run.
   // `script` is in /usr/bin on macOS by default.
+  // Env vars exposed to the script body — scripts can `terminal-cli ticket ...`
+  // etc. since the runner installs terminal-cli into ~/.config/TerMinal/bin.
+  const TERMINAL_BIN_DIR = join(CFG, 'bin')
+  const childEnv = {
+    ...process.env,
+    PATH: `${TERMINAL_BIN_DIR}:${process.env.PATH || ''}`,
+    TERMINAL_REPO: repo,
+    TERMINAL_RUN_ID: runId,
+    TERMINAL_BRANCH: branch,
+    TERMINAL_WORKTREE: worktree,
+    TERMINAL_ENGINE: sched.engine,
+    ...(sched.model ? { TERMINAL_MODEL: sched.model } : {}),
+  }
   const code = await new Promise((resolve) => {
     const p = spawn('script', ['-q', '/dev/null', shell, '-l', '-c', cmd], {
       cwd: worktree,
-      env: process.env,
+      env: childEnv,
       stdio: ['ignore', fd, fd],
     })
     p.on('error', (err) => {

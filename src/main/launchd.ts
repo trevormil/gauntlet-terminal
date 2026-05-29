@@ -52,6 +52,21 @@ export function installRunner(srcPath: string): void {
   }
 }
 
+// Same pattern for the script helper. Scripts referenced by .agents/<id>.sh
+// get ~/.config/TerMinal/bin prepended to PATH at exec time, so they can call
+// `terminal-cli hitl ...` etc. without knowing the absolute path.
+export function installCli(srcPath: string): void {
+  try {
+    if (!existsSync(srcPath)) return
+    mkdirSync(join(CFG, 'bin'), { recursive: true })
+    const dest = join(CFG, 'bin', 'terminal-cli')
+    copyFileSync(srcPath, dest)
+    chmodSync(dest, 0o755)
+  } catch {
+    /* best effort */
+  }
+}
+
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 function plistXml(s: Schedule): string {

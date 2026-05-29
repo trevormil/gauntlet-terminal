@@ -49,6 +49,7 @@ const gt = {
     list: () => ipcRenderer.invoke('agents:list'),
     save: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
     reset: (id: string) => ipcRenderer.invoke('agents:reset', id),
+    script: (id: string) => ipcRenderer.invoke('agents:script', id),
     design: (text: string, engine: string, scope: 'repo' | 'global', model?: string) =>
       ipcRenderer.invoke('agents:design', text, engine, scope, model),
     personas: () => ipcRenderer.invoke('personas:list'),

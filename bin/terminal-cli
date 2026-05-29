@@ -1,0 +1,150 @@
+#!/usr/bin/env bun
+// terminal-cli — self-contained TerMinal helpers exposed inside scheduled-agent
+// scripts (.agents/<id>.sh) so the script body can file tickets, raise HITL,
+// emit activity events, and send Telegram pings without hand-coding the JSON.
+//
+// The runner injects ~/.config/TerMinal/bin into PATH before exec-ing scripts,
+// so a script can just call `terminal-cli hitl ...` like any other binary.
+//
+// Subcommands (each prints the resulting id or path on stdout for piping):
+//   terminal-cli ticket "<title>" "<body>"         file a backlog ticket on TERMINAL_REPO
+//   terminal-cli hitl "<title>" "<action>"         file a global HITL item + Telegram ping
+//   terminal-cli activity <kind> "<title>" "<detail>"   emit one activity-feed event
+//   terminal-cli notify "<message>"                send a Telegram message (raw, no HITL framing)
+//
+// SELF-CONTAINED: no imports from the TerMinal app bundle, only ~/.config/TerMinal/*.
+
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, readdirSync } from 'node:fs'
+import { join, basename } from 'node:path'
+import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+
+const CFG = join(homedir(), '.config', 'TerMinal')
+const ACTIVITY = join(CFG, 'activity.jsonl')
+const HITL_FILE = join(CFG, 'hitl.json')
+const SETTINGS_FILE = join(CFG, 'settings.json')
+
+const repo = process.env.TERMINAL_REPO || ''
+const repoLabel = repo ? basename(repo) : ''
+const runId = process.env.TERMINAL_RUN_ID || ''
+
+function readTelegram() {
+  try {
+    return JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'))?.telegram
+  } catch {
+    return null
+  }
+}
+
+function pingTelegram(text) {
+  const t = readTelegram()
+  if (!t?.botToken || !t?.chatId) return
+  fetch(`https://api.telegram.org/bot${t.botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: t.chatId, text }),
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => {})
+}
+
+function emitActivity(kind, title, detail) {
+  mkdirSync(CFG, { recursive: true })
+  const ev = {
+    id: randomUUID(),
+    ts: Date.now(),
+    kind: kind || 'info',
+    title: title || '',
+    detail: detail || '',
+    repo: repoLabel,
+    repoRoot: repo,
+    runId,
+  }
+  appendFileSync(ACTIVITY, JSON.stringify(ev) + '\n')
+}
+
+function fileHitl(title, action) {
+  let list = []
+  try {
+    const a = JSON.parse(readFileSync(HITL_FILE, 'utf8'))
+    if (Array.isArray(a)) list = a
+  } catch {}
+  const item = {
+    id: randomUUID(),
+    title: title || 'untitled',
+    action: action || '',
+    repo: repoLabel,
+    repoRoot: repo,
+    source: 'skill',
+    status: 'open',
+    createdAt: Date.now(),
+  }
+  writeFileSync(HITL_FILE, JSON.stringify([item, ...list], null, 2))
+  emitActivity('blocked', `HITL · ${item.title}`, item.action)
+  // HITL ALWAYS pings Telegram when configured — matches the app's policy.
+  pingTelegram(`⛔ HITL · ${item.title}${item.action ? ` — ${item.action}` : ''}`)
+  console.log(item.id)
+}
+
+function fileTicket(title, body) {
+  if (!repo) {
+    console.error('terminal-cli ticket: TERMINAL_REPO not set — scripts must be invoked by the TerMinal runner')
+    process.exit(2)
+  }
+  const backlog = join(repo, 'backlog')
+  if (!existsSync(backlog)) {
+    console.error(`terminal-cli ticket: ${backlog} does not exist in this repo`)
+    process.exit(2)
+  }
+  const files = readdirSync(backlog).filter((f) => /^\d{4}-.*\.md$/.test(f))
+  const maxId = files.reduce((m, f) => Math.max(m, parseInt(f.slice(0, 4), 10)), 0)
+  const id = String(maxId + 1).padStart(4, '0')
+  const slug =
+    (title || 'untitled')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50) || 'untitled'
+  const today = new Date().toISOString().slice(0, 10)
+  const fm = `---
+id: ${id}
+title: ${JSON.stringify(title || 'Untitled')}
+status: open
+priority: medium
+type: feature
+source: script
+created: ${today}
+updated: ${today}
+---
+
+${body || ''}
+`
+  const path = join(backlog, `${id}-${slug}.md`)
+  writeFileSync(path, fm)
+  emitActivity('ticket-filed', `Ticket filed · #${id}`, title || '')
+  console.log(path)
+}
+
+const [, , cmd, ...args] = process.argv
+switch (cmd) {
+  case 'ticket':
+    fileTicket(args[0], args[1])
+    break
+  case 'hitl':
+    fileHitl(args[0], args[1])
+    break
+  case 'activity':
+    emitActivity(args[0], args[1], args[2])
+    break
+  case 'notify':
+    pingTelegram(args[0] || '')
+    break
+  default:
+    console.error(
+      'usage: terminal-cli <ticket|hitl|activity|notify> [args...]\n' +
+        '  ticket "<title>" "<body>"          file a backlog ticket on TERMINAL_REPO\n' +
+        '  hitl "<title>" "<action>"          file a global HITL item + Telegram ping\n' +
+        '  activity <kind> "<title>" "<detail>"   emit one activity-feed event\n' +
+        '  notify "<message>"                  send a Telegram message (raw)\n',
+    )
+    process.exit(2)
+}

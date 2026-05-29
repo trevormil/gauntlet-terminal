@@ -58,7 +58,9 @@ function ScheduleForm({
   onSave: (agentId: string, engine: Engine, spec: ScheduleSpec, model?: string) => Promise<void>
   onCustomSpawned: () => void
 }) {
-  const [mode, setMode] = useState<'form' | 'custom'>('form')
+  // Plaintext describe-it-in-words is the primary path; the deterministic
+  // Form remains available behind the toggle for power users.
+  const [mode, setMode] = useState<'form' | 'custom'>('custom')
   const [customText, setCustomText] = useState('')
   const [customBusy, setCustomBusy] = useState(false)
   const [customErr, setCustomErr] = useState('')

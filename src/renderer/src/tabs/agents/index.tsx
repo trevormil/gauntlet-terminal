@@ -330,15 +330,24 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [editing, setEditing] = useState<Agent | 'new' | null>(null)
   const [agentFilter, setAgentFilter] = useState<'all' | 'generic' | 'per-repo'>('all')
   const [designerOpen, setDesignerOpen] = useState(false)
+  const [scripts, setScripts] = useState<Record<string, { path: string; body: string } | null>>({})
   const logRef = useRef<HTMLPreElement>(null)
 
   const reloadAgents = () => window.gt.agents.list().then(setAgents)
-  const toggleExpand = (id: string) =>
+  // Lazy-load the bash script body the first time an agent is expanded; cache
+  // the result (including null when no script exists) so we don't re-hit IPC.
+  const loadScript = (id: string) => {
+    if (id in scripts) return
+    window.gt.agents.script(id).then((r) => setScripts((m) => ({ ...m, [id]: r })))
+  }
+  const toggleExpand = (id: string) => {
+    loadScript(id)
     setExpanded((s) => {
       const n = new Set(s)
       n.has(id) ? n.delete(id) : n.add(id)
       return n
     })
+  }
 
   useEffect(() => {
     window.gt.agents.list().then(setAgents)
@@ -526,9 +535,31 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                     </div>
                     {expanded.has(a.id) && (
                       <div className="mt-2 space-y-1.5">
-                        <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-black/30 p-2 font-mono text-[10.5px] leading-relaxed text-zinc-400">
-                          {a.prompt}
-                        </pre>
+                        {scripts[a.id] ? (
+                          <>
+                            <div className="flex items-center gap-1.5 text-[10px]">
+                              <Badge tone="blue">bash script</Badge>
+                              <span className="font-mono text-zinc-600">{scripts[a.id]!.path.replace(/^.*\//, '… /')}</span>
+                            </div>
+                            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-[#0c0c11] p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
+                              {scripts[a.id]!.body}
+                            </pre>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1.5 text-[10px]">
+                              <Badge tone="mute">prompt</Badge>
+                              <span className="text-zinc-700">
+                                {scripts[a.id] === null
+                                  ? '(no .agents/' + a.id + '.sh — runs as a single claude/codex prompt)'
+                                  : 'loading…'}
+                              </span>
+                            </div>
+                            <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-black/30 p-2 font-mono text-[10.5px] leading-relaxed text-zinc-400">
+                              {a.prompt}
+                            </pre>
+                          </>
+                        )}
                         <div className="break-all font-mono text-[9.5px] text-zinc-600">
                           runs as: <EngineLogo engine={a.engine || 'codex'} size={9} className="mx-0.5 -mb-0.5" />
                           {runsAs(a.engine || 'codex')}

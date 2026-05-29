@@ -3,7 +3,7 @@ import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { statSync, existsSync, readdirSync } from 'node:fs'
+import { statSync, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { spawn as cpSpawn } from 'node:child_process'
 import * as pty from 'node-pty'
 
@@ -61,6 +61,7 @@ import {
   runFactorySpawn,
   runDesignerSpawn,
   runScheduleDesignerSpawn,
+  locateScript,
   runPrAgent,
   listPipelines,
   listRuns,
@@ -82,6 +83,7 @@ import {
 } from './schedules'
 import {
   installRunner,
+  installCli,
   reconcileSchedules,
   syncSchedule,
   unscheduleJob,
@@ -321,6 +323,10 @@ function createWindow() {
     ? join(process.resourcesPath, 'terminal-cron')
     : join(moduleDir, '../../bin/terminal-cron')
   installRunner(runnerSrc)
+  const cliSrc = app.isPackaged
+    ? join(process.resourcesPath, 'terminal-cli')
+    : join(moduleDir, '../../bin/terminal-cli')
+  installCli(cliSrc)
   try {
     reconcileSchedules()
   } catch {
@@ -444,6 +450,19 @@ ipcMain.handle('agents:save', (_e, agent: { id: string; title: string; prompt: s
   saveAgent(repoRootOf(cur().cwd), agent),
 )
 ipcMain.handle('agents:reset', (_e, id: string) => resetAgent(repoRootOf(cur().cwd), id))
+// Read the script body for an agent if .agents/<id>.sh (or global) exists. Returns
+// { path, body } when found, null otherwise — used by the Agents tab to render
+// the bash inline alongside the prompt.
+ipcMain.handle('agents:script', (_e, id: string) => {
+  const root = repoRootOf(cur().cwd) || ''
+  const p = locateScript(root, id)
+  if (!p) return null
+  try {
+    return { path: p, body: readFileSync(p, 'utf8') }
+  } catch {
+    return null
+  }
+})
 ipcMain.handle(
   'agents:design',
   (_e, text: string, engine: Engine, scope: 'repo' | 'global', model?: string) =>

@@ -365,6 +365,20 @@ export function getRun(id: string): AgentRun | null {
 // Build the engine command. codex needs -C; claude uses cwd. Both run through a
 // login shell so $PATH has brew/local bins, and with stdin = /dev/null (else
 // they block reading "additional input from stdin" on an empty pipe).
+// Locate an executable script for this agent. Per-repo wins over global so a
+// repo can override a global agent's body. The runner branches: if a script
+// exists, exec it with env vars; else fall back to the legacy claude/codex
+// prompt-wrap built by buildCmd().
+const TERMINAL_BIN_DIR = join(homedir(), '.config', 'TerMinal', 'bin')
+const GLOBAL_SCRIPTS_DIR = join(homedir(), '.config', 'TerMinal', 'scripts')
+export function locateScript(repoRoot: string, agentId: string): string | null {
+  const perRepo = join(repoRoot, '.agents', `${agentId}.sh`)
+  if (existsSync(perRepo)) return perRepo
+  const global = join(GLOBAL_SCRIPTS_DIR, `${agentId}.sh`)
+  if (existsSync(global)) return global
+  return null
+}
+
 function buildCmd(engine: Engine, worktree: string, prompt: string, model?: string): string {
   const bin = enginePath(engine)
   const modelFlag = model ? ` --model ${shq(model)}` : ''
@@ -520,9 +534,26 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   const runStep = () => {
     const step = spec.steps[stepIdx]
     if (spec.steps.length > 1) append(`\n━━ step ${stepIdx + 1}/${spec.steps.length} · ${step.label} ━━\n\n`)
-    const p = spawn(LOGIN_SHELL, ['-l', '-c', buildCmd(spec.engine, worktree, step.prompt, spec.model)], {
+    // Script-first: if .agents/<id>.sh (or global ~/.config/TerMinal/scripts/<id>.sh)
+    // exists, exec it directly with env vars instead of building a claude/codex
+    // command from the prompt. Inside the script the operator can mix
+    // deterministic shell with `claude -p` / `codex exec` however they want.
+    const scriptPath = locateScript(repoRoot, spec.id)
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      // Inject TerMinal's bin dir so scripts can call `terminal-cli ...`.
+      PATH: `${TERMINAL_BIN_DIR}:${process.env.PATH || ''}`,
+      TERMINAL_REPO: repoRoot,
+      TERMINAL_RUN_ID: run.id,
+      TERMINAL_BRANCH: branch,
+      TERMINAL_WORKTREE: worktree,
+      TERMINAL_ENGINE: spec.engine,
+      ...(spec.model ? { TERMINAL_MODEL: spec.model } : {}),
+    }
+    const cmd = scriptPath ? shq(scriptPath) : buildCmd(spec.engine, worktree, step.prompt, spec.model)
+    const p = spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
       cwd: worktree,
-      env: process.env,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     procs.set(run.id, p)

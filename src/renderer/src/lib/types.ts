@@ -452,6 +452,7 @@ export type GtApi = {
     list: () => Promise<Agent[]>
     save: (agent: Partial<Agent> & { id: string; title: string; prompt: string }) => Promise<{ ok: true } | { error: string }>
     reset: (id: string) => Promise<{ ok: true } | { error: string }>
+    script: (id: string) => Promise<{ path: string; body: string } | null>
     design: (text: string, engine: Engine, scope: 'repo' | 'global', model?: string) =>
       Promise<AgentRun | { error: string }>
     personas: () => Promise<Persona[]>
