@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import { EnginePicker } from '../../components/EnginePicker'
+import { EngineLogo } from '../../components/EngineLogo'
 import type { BadgeTone } from '../../components/ui'
 import type { Tab, TabContext, Agent, AgentRun, Engine } from '../../lib/types'
 
@@ -73,6 +74,150 @@ const FIELD =
 
 // Add / edit an agent. Saving writes <repo>/.agents/agents.json (overriding a
 // built-in default = same id). The id is immutable once set.
+function AgentDesigner({
+  onClose,
+  onSpawned,
+  onAdvanced,
+}: {
+  onClose: () => void
+  onSpawned: (run: AgentRun) => void
+  onAdvanced: () => void
+}) {
+  const [text, setText] = useState('')
+  const [engine, setEngine] = useState<Engine>('claude')
+  const [scope, setScope] = useState<'repo' | 'global'>('repo')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setEngine(s.defaultEngine))
+  }, [])
+
+  const submit = async () => {
+    const t = text.trim()
+    if (!t) return
+    setBusy(true)
+    setErr('')
+    const r = await window.gt.agents.design(t, engine, scope)
+    setBusy(false)
+    if (r && 'error' in r) {
+      setErr(r.error)
+      return
+    }
+    onSpawned(r as AgentRun)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={onClose}>
+      <div
+        className="flex max-h-[86vh] w-[640px] flex-col gap-3 overflow-y-auto rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          <Bot size={16} strokeWidth={2} className="text-[var(--gt-accent-light)]" />
+          <h2 className="text-sm font-bold text-zinc-100">New agent</h2>
+          <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-zinc-500">
+            Describe what it does —
+            <EngineLogo engine={engine} size={11} />
+            {engine} writes the prompt + saves it
+          </span>
+        </div>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-[10.5px] uppercase tracking-wider text-zinc-500">Description</span>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit()
+            }}
+            rows={5}
+            autoFocus
+            placeholder={
+              "e.g. An agent that scans the repo for any TODO/FIXME older than 90 days, files a ticket per cluster, and opens a PR only if it can safely clean up the matching comments without changing behavior. Run weekly."
+            }
+            className="resize-none rounded-md border border-[var(--gt-border)] bg-black/30 px-3 py-2 text-[12.5px] text-zinc-200 placeholder:text-zinc-600 focus:border-[var(--gt-accent)]/60 focus:outline-none"
+          />
+        </label>
+
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10.5px] uppercase tracking-wider text-zinc-500">Scope</span>
+            <div className="flex items-center gap-0.5 rounded-md border border-[var(--gt-border)] p-0.5">
+              {(
+                [
+                  { id: 'repo', label: 'This repo' },
+                  { id: 'global', label: 'Global' },
+                ] as const
+              ).map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setScope(s.id)}
+                  title={
+                    s.id === 'repo'
+                      ? "Save to this repo's .agents/agents.json"
+                      : 'Save to the global registry (~/.config/TerMinal/agents/global.json)'
+                  }
+                  className={`rounded-sm px-2 py-1 text-[11px] ${
+                    scope === s.id
+                      ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10.5px] uppercase tracking-wider text-zinc-500">Engine</span>
+            <select
+              value={engine}
+              onChange={(e) => setEngine(e.target.value as Engine)}
+              className="rounded-md border border-[var(--gt-border)] bg-black/30 px-2 py-1 text-[11px] text-zinc-300 outline-none"
+            >
+              <option value="claude">claude</option>
+              <option value="codex">codex</option>
+            </select>
+          </label>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={onAdvanced}
+              className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-300"
+              title="Skip the designer and write the agent JSON yourself"
+            >
+              Advanced…
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-md border border-[var(--gt-border)] px-3 py-1 text-[11px] text-zinc-300 hover:bg-white/5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={!text.trim() || busy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--gt-accent)] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
+            >
+              {busy ? <Bot size={12} strokeWidth={2.5} /> : <EngineLogo engine={engine} size={12} />}
+              {busy ? 'Spawning…' : `Design with ${engine}`}
+            </button>
+          </div>
+        </div>
+
+        {err && <div className="text-[11px] text-[var(--gt-red)]">{err}</div>}
+        <div className="text-[10.5px] text-zinc-600">
+          ⌘↵ to submit · the designer reads CLAUDE.md, <span className="font-mono">.agents/forge.md</span>, and
+          existing agent specs before writing your agent's prompt so it follows this project's MR + ticket conventions
+          (worktree, auto-mergeable label, sole-writer scope, depends_on).
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AgentEditor({
   agent,
   onClose,
@@ -180,34 +325,8 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [editing, setEditing] = useState<Agent | 'new' | null>(null)
   const [agentFilter, setAgentFilter] = useState<'all' | 'generic' | 'per-repo'>('all')
-  const [designText, setDesignText] = useState('')
-  const [designEngine, setDesignEngine] = useState<Engine>('claude')
-  const [designScope, setDesignScope] = useState<'repo' | 'global'>('repo')
-  const [designing, setDesigning] = useState(false)
-  const [designMsg, setDesignMsg] = useState('')
+  const [designerOpen, setDesignerOpen] = useState(false)
   const logRef = useRef<HTMLPreElement>(null)
-  // Honor the user's default engine on first mount; same pattern as Tickets/Factory.
-  useEffect(() => {
-    window.gt.settings.get().then((s) => setDesignEngine(s.defaultEngine))
-  }, [])
-  const submitDesign = async () => {
-    const text = designText.trim()
-    if (!text) return
-    setDesigning(true)
-    setDesignMsg('')
-    const r = await window.gt.agents.design(text, designEngine, designScope)
-    setDesigning(false)
-    if ('error' in r) {
-      setDesignMsg(`error: ${r.error}`)
-      return
-    }
-    setDesignText('')
-    setDesignMsg(
-      `${designEngine} is designing the agent into ${designScope === 'global' ? 'the global registry' : 'this repo'} — it'll show up in the list once the run completes`,
-    )
-    setRuns((prev) => [r, ...prev.filter((x) => x.id !== r.id)])
-    setSel(r.id)
-  }
 
   const reloadAgents = () => window.gt.agents.list().then(setAgents)
   const toggleExpand = (id: string) =>
@@ -290,70 +409,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
         </span>
       </div>
 
-      {/* Designer text-box — spawn a claude/codex run that designs an agent
-          from a natural-language description and saves it into the chosen
-          scope (this repo's .agents/agents.json, or the global registry). */}
-      <div className="shrink-0 border-b border-[var(--gt-border)] bg-[var(--gt-panel)]/40 px-4 py-2.5">
-        <div className="flex items-start gap-2">
-          <Bot size={14} strokeWidth={2} className="mt-1 shrink-0 text-[var(--gt-accent-light)]" />
-          <textarea
-            value={designText}
-            onChange={(e) => setDesignText(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitDesign()
-            }}
-            placeholder="Describe the agent — what it does, when to run it, what it should produce…"
-            rows={2}
-            className="min-w-0 flex-1 resize-none rounded-md border border-[var(--gt-border)] bg-black/20 px-2 py-1.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-[var(--gt-accent)]/60 focus:outline-none"
-          />
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <div className="flex items-center gap-0.5 rounded-md border border-[var(--gt-border)] p-0.5">
-              {(['repo', 'global'] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setDesignScope(s)}
-                  title={
-                    s === 'repo'
-                      ? "Save to this repo's .agents/agents.json"
-                      : 'Save to the global registry (~/.config/TerMinal/agents/global.json)'
-                  }
-                  className={`rounded-sm px-1.5 py-0.5 text-[10px] ${
-                    designScope === s
-                      ? 'bg-[var(--gt-accent)]/20 text-zinc-100'
-                      : 'text-zinc-500 hover:text-zinc-300'
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-            <select
-              value={designEngine}
-              onChange={(e) => setDesignEngine(e.target.value as Engine)}
-              className="rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none"
-            >
-              <option value="claude">claude</option>
-              <option value="codex">codex</option>
-            </select>
-            <button
-              onClick={submitDesign}
-              disabled={!designText.trim() || designing}
-              className="inline-flex items-center gap-1 rounded-md bg-[var(--gt-accent)] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
-            >
-              <Bot size={11} strokeWidth={2.5} />
-              {designing ? 'Spawning…' : 'Design agent'}
-            </button>
-          </div>
-        </div>
-        {designMsg && (
-          <div
-            className={`mt-1 pl-6 text-[11px] ${designMsg.startsWith('error:') ? 'text-[var(--gt-red)]' : 'text-[var(--gt-green)]'}`}
-          >
-            {designMsg}
-          </div>
-        )}
-      </div>
-
       <div className="flex min-h-0 flex-1">
         <div className="flex w-[44%] min-w-[340px] flex-col border-r border-[var(--gt-border)]">
           <div className="shrink-0 space-y-2 overflow-y-auto p-3" style={{ maxHeight: '58%' }}>
@@ -377,8 +432,9 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                 </div>
               </div>
               <button
-                onClick={() => setEditing('new')}
+                onClick={() => setDesignerOpen(true)}
                 className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-0.5 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+                title="Design a new agent — describe what it does, claude/codex writes the prompt"
               >
                 <Plus size={12} strokeWidth={2.5} />
                 New agent
@@ -470,7 +526,8 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                           {a.prompt}
                         </pre>
                         <div className="break-all font-mono text-[9.5px] text-zinc-600">
-                          runs as: {runsAs(a.engine || 'codex')}
+                          runs as: <EngineLogo engine={a.engine || 'codex'} size={9} className="mx-0.5 -mb-0.5" />
+                          {runsAs(a.engine || 'codex')}
                         </div>
                       </div>
                     )}
@@ -517,7 +574,10 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                   <Badge tone={statusTone(r.status)}>{r.status}</Badge>
                   <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-200">{r.agentTitle}</span>
                   <span className="shrink-0 font-mono text-[9.5px] text-zinc-600">{repoOf(r.repoRoot)}</span>
-                  <span className="shrink-0 text-[9.5px] uppercase text-zinc-600">{r.engine}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[9.5px] uppercase text-zinc-600">
+                    <EngineLogo engine={r.engine} size={10} />
+                    {r.engine}
+                  </span>
                   <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{reltime(r.startedAt)}</span>
                 </button>
               ))
@@ -535,7 +595,10 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
               <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
                 <Badge tone={statusTone(selectedRun.status)}>{selectedRun.status}</Badge>
                 <span className="text-[12px] font-semibold text-zinc-100">{selectedRun.agentTitle}</span>
-                <span className="text-[9.5px] uppercase text-zinc-600">{selectedRun.engine}</span>
+                <span className="inline-flex items-center gap-1 text-[9.5px] uppercase text-zinc-600">
+                  <EngineLogo engine={selectedRun.engine} size={11} />
+                  {selectedRun.engine}
+                </span>
                 {selectedRun.persona && (
                   <span className="text-[10px] text-[var(--gt-accent-light)]">as {selectedRun.persona}</span>
                 )}
@@ -588,6 +651,21 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
           onPick={(e, persona, pipeline) => {
             run(picking.id, e, persona, pipeline)
             setPicking(null)
+          }}
+        />
+      )}
+
+      {designerOpen && (
+        <AgentDesigner
+          onClose={() => setDesignerOpen(false)}
+          onSpawned={(r) => {
+            setDesignerOpen(false)
+            setRuns((prev) => [r, ...prev.filter((x) => x.id !== r.id)])
+            setSel(r.id)
+          }}
+          onAdvanced={() => {
+            setDesignerOpen(false)
+            setEditing('new')
           }}
         />
       )}

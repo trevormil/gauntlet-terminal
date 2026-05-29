@@ -3,6 +3,7 @@ import { Plus, Hand, ArrowUpRight, ChevronRight, ChevronDown, Bot, GitPullReques
 import { Badge, badgeClasses } from './ui'
 import { Markdown } from './Markdown'
 import { EnginePicker } from './EnginePicker'
+import { EngineLogo } from './EngineLogo'
 import { MrDetailView } from './MrDetail'
 import { statusTone, priorityTone, typeTone, horizonTone, stateTone, verdictTone, testTone } from '../lib/badges'
 import type { BadgeTone } from './ui'
@@ -332,7 +333,7 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
               disabled={!spawnText.trim() || spawning}
               className="mt-0.5 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gt-accent)] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
             >
-              <Bot size={13} strokeWidth={2} />
+              {spawning ? <Bot size={13} strokeWidth={2} /> : <EngineLogo engine={spawnEngine} size={13} />}
               {spawning ? 'Filing…' : 'File ticket'}
             </button>
           </div>

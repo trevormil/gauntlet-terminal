@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { Badge } from '../../components/ui'
+import { EngineLogo } from '../../components/EngineLogo'
 import type { BadgeTone } from '../../components/ui'
 import type { Tab, TabContext, Agent, Schedule, ScheduleSpec, CronRun, Engine } from '../../lib/types'
 
@@ -338,7 +339,10 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                   <Badge tone={statusTone(r.status)}>{r.status}</Badge>
                   <span className="font-semibold text-zinc-200">{r.agentTitle}</span>
                   <span className="font-mono text-[10px] text-zinc-500">{r.repoLabel}</span>
-                  <span className="text-[10px] uppercase text-zinc-600">{r.engine}</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] uppercase text-zinc-600">
+                    <EngineLogo engine={r.engine} size={10} />
+                    {r.engine}
+                  </span>
                   <span className="font-mono text-[10px] text-zinc-600">{r.branch}</span>
                   <div className="flex-1" />
                   <span className="text-zinc-500">{fmtWhen(r.startedAt)}</span>
@@ -379,7 +383,10 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[13px] font-semibold text-zinc-100">{s.agentTitle}</span>
                     <Badge tone="blue">{s.describe || ''}</Badge>
-                    <span className="text-[10px] uppercase text-zinc-600">{s.engine}</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] uppercase text-zinc-600">
+                      <EngineLogo engine={s.engine} size={10} />
+                      {s.engine}
+                    </span>
                     {s.lastStatus && s.lastStatus !== 'never' && (
                       <Badge tone={statusTone(s.lastStatus)}>{s.lastStatus}</Badge>
                     )}
