@@ -25,7 +25,7 @@ const tab: Tab = {
   id: 'hitl',
   title: 'HITL',
   icon: Hand,
-  order: 1.5,
+  order: 4,
   appliesTo: (ctx) => ctx.hasBacklog || !!ctx.repoPath,
   badge: async (gt) => (await gt.tickets.list()).filter((t) => t.hitl).length,
   Component: HitlTab,

@@ -250,7 +250,7 @@ const tab: Tab = {
   id: 'help',
   title: 'Help',
   icon: LifeBuoy,
-  order: 0, // first registry tab (after Terminal), prominent for onboarding
+  order: 9, // reference — after the workflow tabs
   appliesTo: () => true,
   Component: HelpTab,
 }

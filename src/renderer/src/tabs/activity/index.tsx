@@ -225,7 +225,7 @@ const tab: Tab = {
   id: 'activity',
   title: 'Activity',
   icon: Activity,
-  order: 4,
+  order: 5,
   appliesTo: () => true, // global feed, always available
   Component: ActivityTab,
 }

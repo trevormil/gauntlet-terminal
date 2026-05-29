@@ -318,7 +318,7 @@ const tab: Tab = {
   id: 'agents',
   title: 'Agents',
   icon: Bot,
-  order: 1.8,
+  order: 3,
   appliesTo: (ctx) => ctx.hasAgents,
   badge: async (gt) => (await gt.agents.runs()).filter((r) => r.status === 'running').length,
   Component: AgentsTab,

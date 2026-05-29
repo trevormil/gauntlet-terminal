@@ -499,7 +499,7 @@ const tab: Tab = {
   id: 'files',
   title: 'Files',
   icon: FolderTree,
-  order: 3,
+  order: 8,
   appliesTo: (ctx) => !!(ctx.repoRoot || ctx.cwd),
   Component: FilesTab,
 }

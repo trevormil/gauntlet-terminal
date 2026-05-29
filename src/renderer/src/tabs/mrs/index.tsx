@@ -199,7 +199,7 @@ const tab: Tab = {
   id: 'mrs',
   title: 'MRs',
   icon: GitPullRequest,
-  order: 1.2,
+  order: 2,
   // Always available for a git repo; shows a "no forge remote" state when the
   // repo is local-only (glab needs an origin remote to list MRs).
   appliesTo: (ctx) => !!ctx.repoRoot,

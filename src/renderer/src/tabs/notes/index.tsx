@@ -143,7 +143,7 @@ const tab: Tab = {
   id: 'notes',
   title: 'Notes',
   icon: NotebookText,
-  order: 2,
+  order: 7,
   appliesTo: () => true, // always on
   Component: NotesTab,
 }

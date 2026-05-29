@@ -164,7 +164,7 @@ const tab: Tab = {
   id: 'sessions',
   title: 'Sessions',
   icon: Layers,
-  order: 0,
+  order: 6,
   // Always available for a repo (peer to Tickets & MRs); shows the repo's
   // sessions/ docs, with an empty state until /session-start creates one.
   appliesTo: (ctx) => ctx.hasSessions || !!ctx.repoRoot,
