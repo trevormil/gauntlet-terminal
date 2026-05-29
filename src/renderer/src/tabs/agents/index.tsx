@@ -13,7 +13,6 @@ import {
   Square,
   Trash2,
   FolderOpen,
-  Clock,
   ChevronDown,
   ChevronRight,
   Pencil,
@@ -24,7 +23,7 @@ import {
 import { Badge } from '../../components/ui'
 import { EnginePicker } from '../../components/EnginePicker'
 import type { BadgeTone } from '../../components/ui'
-import type { Tab, TabContext, Agent, AgentRun, Schedule, Engine, Cadence } from '../../lib/types'
+import type { Tab, TabContext, Agent, AgentRun, Engine } from '../../lib/types'
 
 const AGENT_ICON: Record<string, LucideIcon> = {
   BookText,
@@ -37,8 +36,6 @@ const AGENT_ICON: Record<string, LucideIcon> = {
   Eraser,
   Bot,
 }
-const ENGINES: Engine[] = ['codex', 'claude']
-const CADENCES: (Cadence | 'off')[] = ['off', 'hourly', 'daily', 'weekly']
 const statusTone = (s: string): BadgeTone =>
   s === 'done'
     ? 'green'
@@ -175,12 +172,8 @@ function AgentEditor({
 function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [runs, setRuns] = useState<AgentRun[]>([])
-  const [schedules, setSchedules] = useState<Schedule[]>([])
   const [outputs, setOutputs] = useState<Record<string, string>>({})
   const [sel, setSel] = useState<string | null>(null)
-  // engine is chosen per-run (two Run buttons); schedules keep a per-agent engine
-  const [schedEngine, setSchedEngine] = useState<Record<string, Engine>>({})
-  const engOf = (id: string): Engine => schedEngine[id] || 'codex'
   const [picking, setPicking] = useState<{ id: string; title: string } | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [editing, setEditing] = useState<Agent | 'new' | null>(null)
@@ -193,11 +186,9 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
       n.has(id) ? n.delete(id) : n.add(id)
       return n
     })
-  const refreshSchedules = () => window.gt.schedules.list().then(setSchedules)
 
   useEffect(() => {
     window.gt.agents.list().then(setAgents)
-    refreshSchedules()
     window.gt.agents.runs().then((rs) => {
       setRuns(rs)
       setOutputs((o) => {
@@ -232,9 +223,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     () => new Set(runs.filter((r) => r.status === 'running').map((r) => r.agentId)),
     [runs],
   )
-  const scheduleFor = (id: string) =>
-    schedules.find((s) => s.repoRoot === ctx.repoRoot && s.agentId === id) || null
-
   useEffect(() => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
@@ -249,17 +237,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     setRuns((prev) => [r, ...prev.filter((x) => x.id !== r.id)])
     setSel(r.id)
   }
-
-  const setCadence = async (a: Agent, cadence: Cadence | 'off') => {
-    const existing = scheduleFor(a.id)
-    if (existing) await window.gt.schedules.remove(existing.id)
-    if (cadence !== 'off')
-      await window.gt.schedules.add({ agentId: a.id, agentTitle: a.title, engine: engOf(a.id), cadence })
-    refreshSchedules()
-  }
-
-  const sel2 =
-    'cursor-pointer appearance-none rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none'
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--gt-bg)]">
@@ -290,7 +267,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
               agents.map((a) => {
                 const Icon = AGENT_ICON[a.icon || ''] || Bot
                 const busy = runningByAgent.has(a.id)
-                const sched = scheduleFor(a.id)
                 return (
                   <div
                     key={a.id}
@@ -324,35 +300,6 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                           </>
                         )}
                       </button>
-                    </div>
-                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-zinc-600">
-                      <Clock size={11} strokeWidth={2} />
-                      <span>schedule</span>
-                      <select
-                        value={sched?.cadence || 'off'}
-                        onChange={(e) => setCadence(a, e.target.value as Cadence | 'off')}
-                        className={sel2}
-                      >
-                        {CADENCES.map((c) => (
-                          <option key={c} value={c} className="bg-[var(--gt-panel)] text-zinc-200">
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="flex rounded border border-[var(--gt-border)]">
-                        {ENGINES.map((e) => (
-                          <button
-                            key={e}
-                            onClick={() => setSchedEngine((s) => ({ ...s, [a.id]: e }))}
-                            className={`px-1.5 py-0.5 text-[9.5px] ${
-                              engOf(a.id) === e ? 'bg-[var(--gt-accent)]/20 text-zinc-200' : 'text-zinc-600 hover:text-zinc-300'
-                            }`}
-                          >
-                            {e}
-                          </button>
-                        ))}
-                      </div>
-                      {sched?.lastRun && <span className="text-zinc-600">· last {reltime(sched.lastRun)} ago</span>}
                     </div>
                     <div className="mt-2 flex items-center gap-3 text-[11px]">
                       <button

@@ -66,12 +66,22 @@ import {
 import {
   readSchedules,
   addSchedule,
+  updateSchedule,
   removeSchedule,
   toggleSchedule,
-  markRun,
-  dueSchedules,
-  type Cadence,
+  getSchedule,
+  type NewSchedule,
 } from './schedules'
+import {
+  installRunner,
+  reconcileSchedules,
+  syncSchedule,
+  unscheduleJob,
+  removeAllJobs,
+  runScheduleNow,
+} from './launchd'
+import { readCronRuns, readCronRunLog } from './cron-runs'
+import { describeSpec, nextRun, type ScheduleSpec } from './cron'
 import { readPersonas } from './personas'
 
 const claudeBin = () => enginePath('claude')
@@ -207,7 +217,6 @@ function watchSession() {
 type TurnWatch = { file: string; mtime: number; lastTurnId: string }
 const turnWatch = new Map<string, TurnWatch>()
 let activityTimer: ReturnType<typeof setInterval> | null = null
-let scheduleTimer: ReturnType<typeof setInterval> | null = null
 let telegramTimer: ReturnType<typeof setInterval> | null = null
 function pollActivity() {
   for (const [key, s] of sessions) {
@@ -293,16 +302,20 @@ function createWindow() {
   onActivity((ev) => send('activity:event', ev))
   startActivityTail() // surface externally-appended events (skills) live
   onAgentEvent((channel, payload) => send(channel, payload))
-  loadPersistedRuns() // restore past agent runs before the scheduler can add new ones
+  loadPersistedRuns() // restore past agent runs
   if (!activityTimer) activityTimer = setInterval(pollActivity, 1500)
-  // fire any due scheduled agent runs (interval-based cadence)
-  if (!scheduleTimer)
-    scheduleTimer = setInterval(() => {
-      for (const s of dueSchedules()) {
-        const r = runAgent(s.repoRoot, s.agentId, s.engine)
-        if (!('error' in r)) markRun(s.id)
-      }
-    }, 60_000)
+  // Real cron: install the headless runner at its stable path, then reconcile
+  // launchd ↔ schedules.json (loads enabled jobs, removes any orphans). Jobs
+  // fire via launchd even when the app is closed — no in-app ticker.
+  const runnerSrc = app.isPackaged
+    ? join(process.resourcesPath, 'terminal-cron')
+    : join(moduleDir, '../../bin/terminal-cron')
+  installRunner(runnerSrc)
+  try {
+    reconcileSchedules()
+  } catch {
+    /* launchd unavailable — schedules still listable */
+  }
 
   // Telegram AFK control: enumerate run targets from open sessions, prime the
   // cursor if control was left on, and poll for inbound commands.
@@ -447,18 +460,67 @@ ipcMain.handle(
 ipcMain.handle('agents:runs', () => listRuns())
 ipcMain.handle('agents:cancel', (_e, runId: string) => cancelRun(runId))
 ipcMain.handle('agents:remove-worktree', (_e, runId: string) => removeWorktree(runId))
-ipcMain.handle('schedules:list', () => readSchedules())
+// Schedules are backed by real launchd jobs; every mutation syncs launchd in
+// lockstep, and `enriched` annotates each with its human cadence + next fire.
+ipcMain.handle('schedules:list', () => {
+  const now = Date.now()
+  return readSchedules(now).map((s) => ({ ...s, describe: describeSpec(s.spec), nextRun: nextRun(s.spec, now) }))
+})
 ipcMain.handle(
-  'schedules:add',
-  (_e, input: { agentId: string; agentTitle: string; engine: Engine; cadence: Cadence }) =>
-    addSchedule({
-      repoRoot: repoRootOf(cur().cwd),
-      repoLabel: repoForCwd(cur().cwd)?.path || basename(repoRootOf(cur().cwd) || ''),
-      ...input,
-    }),
+  'schedules:save',
+  (_e, input: { id?: string; agentId: string; engine: Engine; spec: ScheduleSpec; enabled?: boolean }) => {
+    const root = repoRootOf(cur().cwd)
+    if (!root) return { error: 'not a git repo' }
+    const agent = readAgents(root).find((a) => a.id === input.agentId)
+    if (!agent) return { error: 'unknown agent' }
+    const base: NewSchedule = {
+      repoRoot: root,
+      repoLabel: repoForCwd(cur().cwd)?.path || basename(root),
+      agentId: agent.id,
+      agentTitle: agent.title,
+      engine: input.engine || agent.engine || 'codex',
+      prompt: agent.prompt, // snapshot — runner uses this offline
+      spec: input.spec,
+      enabled: input.enabled ?? true,
+    }
+    const sched = input.id ? updateSchedule(input.id, base) : addSchedule(base)
+    if (!sched) return { error: 'schedule not found' }
+    try {
+      syncSchedule(sched)
+    } catch (e) {
+      return { error: `launchd: ${(e as Error).message}` }
+    }
+    return { ok: true, id: sched.id }
+  },
 )
-ipcMain.handle('schedules:remove', (_e, id: string) => removeSchedule(id))
-ipcMain.handle('schedules:toggle', (_e, id: string, enabled: boolean) => toggleSchedule(id, enabled))
+ipcMain.handle('schedules:remove', (_e, id: string) => {
+  unscheduleJob(id)
+  return removeSchedule(id)
+})
+ipcMain.handle('schedules:toggle', (_e, id: string, enabled: boolean) => {
+  const ok = toggleSchedule(id, enabled)
+  const s = getSchedule(id)
+  if (s) {
+    try {
+      syncSchedule(s)
+    } catch {
+      /* best effort */
+    }
+  }
+  return ok
+})
+ipcMain.handle('schedules:run-now', (_e, id: string) => {
+  runScheduleNow(id)
+  return { ok: true }
+})
+ipcMain.handle('schedules:runs', (_e, id?: string) => readCronRuns(id))
+ipcMain.handle('schedules:run-log', (_e, runId: string) => readCronRunLog(runId))
+ipcMain.handle('schedules:reconcile', () => reconcileSchedules())
+ipcMain.handle('schedules:remove-all', () => {
+  const n = removeAllJobs()
+  for (const s of readSchedules()) removeSchedule(s.id)
+  return { removed: n }
+})
 // inject text into the ACTIVE session's terminal (snippet → prompt)
 ipcMain.on('pty:type', (_e, text: string) => {
   try {
@@ -591,7 +653,6 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (watchTimer) clearInterval(watchTimer)
   if (activityTimer) clearInterval(activityTimer)
-  if (scheduleTimer) clearInterval(scheduleTimer)
   if (telegramTimer) clearInterval(telegramTimer)
   for (const s of sessions.values()) s.pty.kill()
   sessions.clear()

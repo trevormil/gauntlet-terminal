@@ -179,7 +179,11 @@ export type AgentRun = {
   output: string
 }
 
-export type Cadence = 'hourly' | 'daily' | 'weekly'
+export type ScheduleSpec =
+  | { kind: 'interval'; everyMinutes: number }
+  | { kind: 'calendar'; minute: number; hour: number; weekdays?: number[] }
+  | { kind: 'cron'; expr: string }
+export type ScheduleStatus = 'never' | 'running' | 'done' | 'failed'
 export type Schedule = {
   id: string
   repoRoot: string
@@ -187,9 +191,31 @@ export type Schedule = {
   agentId: string
   agentTitle: string
   engine: Engine
-  cadence: Cadence
+  prompt: string
+  spec: ScheduleSpec
   enabled: boolean
+  createdAt: number
   lastRun?: number
+  lastStatus?: ScheduleStatus
+  lastRunId?: string
+  // added by schedules:list
+  describe?: string
+  nextRun?: number | null
+}
+export type CronRun = {
+  id: string
+  scheduleId: string
+  agentId: string
+  agentTitle: string
+  engine: string
+  status: 'running' | 'done' | 'failed'
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  branch: string
+  repoLabel: string
+  worktree: string
+  error?: string
 }
 
 export type Review = {
@@ -385,14 +411,20 @@ export type GtApi = {
   }
   schedules: {
     list: () => Promise<Schedule[]>
-    add: (input: {
+    save: (input: {
+      id?: string
       agentId: string
-      agentTitle: string
       engine: Engine
-      cadence: Cadence
-    }) => Promise<Schedule>
+      spec: ScheduleSpec
+      enabled?: boolean
+    }) => Promise<{ ok: true; id: string } | { error: string }>
     remove: (id: string) => Promise<boolean>
     toggle: (id: string, enabled: boolean) => Promise<boolean>
+    runNow: (id: string) => Promise<{ ok: true }>
+    runs: (id?: string) => Promise<CronRun[]>
+    runLog: (runId: string) => Promise<string>
+    reconcile: () => Promise<{ loaded: number; removed: number }>
+    removeAll: () => Promise<{ removed: number }>
   }
   activity: {
     list: () => Promise<ActivityEvent[]>

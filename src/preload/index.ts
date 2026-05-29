@@ -80,9 +80,14 @@ const gt = {
   // scheduled (cron) agent runs
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),
-    add: (input: unknown) => ipcRenderer.invoke('schedules:add', input),
+    save: (input: unknown) => ipcRenderer.invoke('schedules:save', input),
     remove: (id: string) => ipcRenderer.invoke('schedules:remove', id),
     toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('schedules:toggle', id, enabled),
+    runNow: (id: string) => ipcRenderer.invoke('schedules:run-now', id),
+    runs: (id?: string) => ipcRenderer.invoke('schedules:runs', id),
+    runLog: (runId: string) => ipcRenderer.invoke('schedules:run-log', runId),
+    reconcile: () => ipcRenderer.invoke('schedules:reconcile'),
+    removeAll: () => ipcRenderer.invoke('schedules:remove-all'),
   },
 
   // activity feed + notifications

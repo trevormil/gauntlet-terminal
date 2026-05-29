@@ -3,13 +3,16 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import type { Engine } from './agents'
+import type { ScheduleSpec } from './cron'
 
-// Scheduled (cron-ish) agent runs. Interval-based cadence from the last run —
-// simple + good enough; a 60s ticker in main fires the due ones. Stored globally
-// (each schedule carries its repoRoot).
+// Scheduled agent runs, backed by REAL launchd jobs (see launchd.ts). This file
+// is just the store of record; the launchd layer mirrors enabled schedules into
+// per-schedule LaunchAgents and the headless runner (bin/terminal-cron) executes
+// them. Each schedule snapshots everything the runner needs so it stays
+// self-contained (no app import at run time).
 const FILE = join(homedir(), '.config', 'TerMinal', 'schedules.json')
 
-export type Cadence = 'hourly' | 'daily' | 'weekly'
+export type ScheduleStatus = 'never' | 'running' | 'done' | 'failed'
 export type Schedule = {
   id: string
   repoRoot: string
@@ -17,22 +20,39 @@ export type Schedule = {
   agentId: string
   agentTitle: string
   engine: Engine
-  cadence: Cadence
+  prompt: string // snapshot of the agent prompt at save time (runner uses this)
+  spec: ScheduleSpec
   enabled: boolean
+  createdAt: number
   lastRun?: number
+  lastStatus?: ScheduleStatus
+  lastRunId?: string
 }
 
-const MS: Record<Cadence, number> = {
-  hourly: 3_600_000,
-  daily: 86_400_000,
-  weekly: 604_800_000,
+// Migrate legacy {cadence: hourly|daily|weekly} entries to the spec model.
+function migrate(s: Record<string, unknown>, now: number): Schedule {
+  const out = { ...s } as Record<string, unknown>
+  if (!out.spec) {
+    const cadence = out.cadence
+    out.spec =
+      cadence === 'hourly'
+        ? { kind: 'interval', everyMinutes: 60 }
+        : cadence === 'weekly'
+          ? { kind: 'calendar', minute: 0, hour: 9, weekdays: [1] }
+          : { kind: 'calendar', minute: 0, hour: 9 } // daily default
+    delete out.cadence
+  }
+  if (typeof out.createdAt !== 'number') out.createdAt = now
+  if (typeof out.prompt !== 'string') out.prompt = ''
+  return out as Schedule
 }
 
-export function readSchedules(): Schedule[] {
+export function readSchedules(now = Date.now()): Schedule[] {
   if (!existsSync(FILE)) return []
   try {
     const a = JSON.parse(readFileSync(FILE, 'utf8'))
-    return Array.isArray(a) ? a : []
+    if (!Array.isArray(a)) return []
+    return a.map((s) => migrate(s, now))
   } catch {
     return []
   }
@@ -48,10 +68,25 @@ function write(list: Schedule[]): boolean {
   }
 }
 
-export function addSchedule(s: Omit<Schedule, 'id' | 'enabled'>): Schedule {
-  const sched: Schedule = { ...s, id: randomUUID(), enabled: true }
+export function getSchedule(id: string): Schedule | null {
+  return readSchedules().find((s) => s.id === id) || null
+}
+
+export type NewSchedule = Omit<Schedule, 'id' | 'createdAt' | 'lastRun' | 'lastStatus' | 'lastRunId'>
+
+export function addSchedule(s: NewSchedule, now = Date.now()): Schedule {
+  const sched: Schedule = { ...s, id: randomUUID(), createdAt: now, lastStatus: 'never' }
   write([...readSchedules(), sched])
   return sched
+}
+
+export function updateSchedule(id: string, patch: Partial<Schedule>): Schedule | null {
+  const list = readSchedules()
+  const i = list.findIndex((s) => s.id === id)
+  if (i < 0) return null
+  list[i] = { ...list[i], ...patch, id } // id immutable
+  write(list)
+  return list[i]
 }
 
 export function removeSchedule(id: string): boolean {
@@ -60,17 +95,4 @@ export function removeSchedule(id: string): boolean {
 
 export function toggleSchedule(id: string, enabled: boolean): boolean {
   return write(readSchedules().map((s) => (s.id === id ? { ...s, enabled } : s)))
-}
-
-export function markRun(id: string, ts = Date.now()): void {
-  write(readSchedules().map((s) => (s.id === id ? { ...s, lastRun: ts } : s)))
-}
-
-export function nextRunAt(s: Schedule): number {
-  return (s.lastRun ?? 0) + MS[s.cadence]
-}
-
-/** Enabled schedules whose interval has elapsed. */
-export function dueSchedules(now = Date.now()): Schedule[] {
-  return readSchedules().filter((s) => s.enabled && now >= nextRunAt(s))
 }

@@ -6,6 +6,11 @@ directories:
 files:
   - out/**
   - package.json
+# The headless cron runner ships as a real file (Contents/Resources/terminal-cron);
+# the app copies it to ~/.config/TerMinal/bin on launch so launchd has a stable path.
+extraResources:
+  - from: bin/terminal-cron
+    to: terminal-cron
 # node-pty ships a native .node binary that can't live inside the asar archive.
 asarUnpack:
   - '**/node_modules/node-pty/**'

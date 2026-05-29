@@ -1,0 +1,187 @@
+#!/usr/bin/env bun
+// terminal-cron — headless runner for TerMinal scheduled agent runs.
+//
+// launchd invokes:  <bun> terminal-cron run <scheduleId>
+//
+// SELF-CONTAINED on purpose: no imports from the TerMinal app bundle, so it
+// keeps working even if the app moves or is closed. Reads/writes only
+// ~/.config/TerMinal/*. The app installs an up-to-date copy to
+// ~/.config/TerMinal/bin/terminal-cron and points launchd at that stable path.
+//
+// Per run it: creates an isolated git worktree, runs codex/claude there, streams
+// the full log to disk, records a run with status, appends an activity event,
+// and stamps lastRun/lastStatus back onto the schedule.
+
+import { spawn, execFileSync } from 'node:child_process'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, openSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+
+const CFG = join(homedir(), '.config', 'TerMinal')
+const SCHED_FILE = join(CFG, 'schedules.json')
+const RUNS_DIR = join(CFG, 'cron-runs')
+const WT_DIR = join(CFG, 'cron-worktrees')
+const ACTIVITY = join(CFG, 'activity.jsonl')
+const CRON_LOG = join(CFG, 'cron.log')
+
+function log(msg) {
+  try {
+    appendFileSync(CRON_LOG, `${new Date().toISOString()} ${msg}\n`)
+  } catch {}
+}
+function readSchedules() {
+  try {
+    const a = JSON.parse(readFileSync(SCHED_FILE, 'utf8'))
+    return Array.isArray(a) ? a : []
+  } catch {
+    return []
+  }
+}
+function writeSchedules(list) {
+  try {
+    writeFileSync(SCHED_FILE, JSON.stringify(list, null, 2))
+  } catch (e) {
+    log(`failed writing schedules: ${e}`)
+  }
+}
+function stamp(id, patch) {
+  const list = readSchedules()
+  const i = list.findIndex((s) => s.id === id)
+  if (i < 0) return
+  list[i] = { ...list[i], ...patch }
+  writeSchedules(list)
+}
+function activity(ev) {
+  try {
+    mkdirSync(CFG, { recursive: true })
+    appendFileSync(ACTIVITY, JSON.stringify({ id: randomUUID(), ts: Date.now(), ...ev }) + '\n')
+  } catch {}
+}
+const git = (repo, args) =>
+  execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`
+
+function defaultBase(repo) {
+  try {
+    return git(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).replace(/^origin\//, '')
+  } catch {}
+  try {
+    return git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  } catch {
+    return 'main'
+  }
+}
+
+async function runSchedule(id) {
+  mkdirSync(RUNS_DIR, { recursive: true })
+  const sched = readSchedules().find((s) => s.id === id)
+  if (!sched) {
+    log(`run: schedule ${id} not found — skipping`)
+    return 0
+  }
+  if (sched.enabled === false) {
+    log(`run: schedule ${id} disabled — skipping`)
+    return 0
+  }
+
+  const runId = randomUUID()
+  const ts = Date.now()
+  const tag = `${ts}-${runId.slice(0, 4)}`
+  const repo = sched.repoRoot
+  const repoBase = repo.split('/').pop() || 'repo'
+  const worktree = join(WT_DIR, repoBase, `${id}-${tag}`)
+  const branch = `cron/${sched.agentId}-${tag}`
+  const logFile = join(RUNS_DIR, `${runId}.log`)
+  const recFile = join(RUNS_DIR, `${runId}.json`)
+  const writeRec = (extra) =>
+    writeFileSync(
+      recFile,
+      JSON.stringify(
+        {
+          id: runId,
+          scheduleId: id,
+          agentId: sched.agentId,
+          agentTitle: sched.agentTitle,
+          engine: sched.engine,
+          repoRoot: repo,
+          repoLabel: sched.repoLabel,
+          worktree,
+          branch,
+          startedAt: ts,
+          ...extra,
+        },
+        null,
+        2,
+      ),
+    )
+
+  log(`run ${runId}: schedule ${id} (${sched.agentTitle}) in ${repo}`)
+  writeRec({ status: 'running' })
+  stamp(id, { lastRun: ts, lastStatus: 'running', lastRunId: runId })
+  activity({
+    kind: 'agent-run',
+    title: `Scheduled · ${sched.agentTitle} · started`,
+    detail: `${sched.engine} · ${sched.repoLabel}`,
+    repo: sched.repoLabel,
+    repoRoot: repo,
+  })
+
+  // isolated worktree off the default base
+  try {
+    mkdirSync(join(WT_DIR, repoBase), { recursive: true })
+    git(repo, ['worktree', 'add', worktree, '-b', branch, defaultBase(repo)])
+  } catch (e) {
+    const msg = `worktree failed: ${e}`
+    log(`run ${runId}: ${msg}`)
+    writeFileSync(logFile, msg + '\n')
+    writeRec({ status: 'failed', endedAt: Date.now(), error: msg })
+    stamp(id, { lastStatus: 'failed' })
+    activity({
+      kind: 'tests-fail',
+      title: `Scheduled · ${sched.agentTitle} · failed`,
+      detail: msg.slice(0, 120),
+      repo: sched.repoLabel,
+      repoRoot: repo,
+    })
+    return 1
+  }
+
+  const cmd =
+    sched.engine === 'claude'
+      ? `claude -p ${shq(sched.prompt)} --dangerously-skip-permissions`
+      : `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(sched.prompt)}`
+  const shell = process.env.SHELL || '/bin/zsh'
+  const fd = openSync(logFile, 'a')
+  writeFileSync(logFile, `▸ ${sched.agentTitle} · ${sched.engine}\n▸ branch ${branch}\n▸ ${cmd}\n\n`)
+
+  const code = await new Promise((resolve) => {
+    const p = spawn(shell, ['-l', '-c', cmd], { cwd: worktree, env: process.env, stdio: ['ignore', fd, fd] })
+    p.on('error', (err) => {
+      appendFileSync(logFile, `\n[spawn error] ${err.message}\n`)
+      resolve(1)
+    })
+    p.on('exit', (c) => resolve(c ?? 1))
+  })
+
+  const status = code === 0 ? 'done' : 'failed'
+  writeRec({ status, endedAt: Date.now(), exitCode: code })
+  stamp(id, { lastStatus: status })
+  activity({
+    kind: code === 0 ? 'agent-run' : 'tests-fail',
+    title: `Scheduled · ${sched.agentTitle} · ${status}`,
+    detail: `${sched.engine} · ${branch}`,
+    repo: sched.repoLabel,
+    repoRoot: repo,
+  })
+  log(`run ${runId}: ${status} (exit ${code})`)
+  return code === 0 ? 0 : 1
+}
+
+const [, , action, arg] = process.argv
+if (action === 'run' && arg) {
+  runSchedule(arg).then((c) => process.exit(c))
+} else {
+  console.error('usage: terminal-cron run <scheduleId>')
+  process.exit(2)
+}
