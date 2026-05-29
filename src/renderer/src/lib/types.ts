@@ -28,12 +28,23 @@ export type TranscriptStats = {
 
 export type TaskItem = { id: string; subject: string; status: string; activeForm: string }
 
+// Mirror of src/main/events.ts ActivityKind — keep in sync with the tab's
+// ICON / KIND_LABEL / activityTone maps. Unknown kinds fall back gracefully.
 export type ActivityKind =
-  | 'task-complete'
-  | 'ticket-filed'
-  | 'pr-verdict'
   | 'session-start'
+  | 'session-end'
+  | 'ticket-filed'
+  | 'ticket-closed'
+  | 'pr-opened'
+  | 'pr-verdict'
+  | 'pr-merged'
+  | 'tests-pass'
+  | 'tests-fail'
+  | 'check'
+  | 'doc'
   | 'agent-run'
+  | 'task-complete'
+  | 'blocked'
   | 'error'
   | 'info'
 export type ActivityEvent = {

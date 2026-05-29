@@ -3,11 +3,20 @@ import {
   Activity,
   CircleCheck,
   Ticket,
+  TicketCheck,
   GitPullRequest,
+  GitPullRequestArrow,
+  GitMerge,
+  FlaskConical,
+  ScanSearch,
+  FileText,
+  Hand,
+  LogOut,
   Cpu,
   Bot,
   TriangleAlert,
   Info,
+  Search,
   type LucideIcon,
 } from 'lucide-react'
 import { activityTone } from '../../lib/badges'
@@ -15,21 +24,39 @@ import { badgeClasses } from '../../components/ui'
 import type { Tab, TabContext, ActivityEvent, ActivityKind } from '../../lib/types'
 
 const ICON: Record<ActivityKind, LucideIcon> = {
-  'task-complete': CircleCheck,
-  'ticket-filed': Ticket,
-  'pr-verdict': GitPullRequest,
   'session-start': Cpu,
+  'session-end': LogOut,
+  'ticket-filed': Ticket,
+  'ticket-closed': TicketCheck,
+  'pr-opened': GitPullRequestArrow,
+  'pr-verdict': GitPullRequest,
+  'pr-merged': GitMerge,
+  'tests-pass': FlaskConical,
+  'tests-fail': FlaskConical,
+  check: ScanSearch,
+  doc: FileText,
   'agent-run': Bot,
+  'task-complete': CircleCheck,
+  blocked: Hand,
   error: TriangleAlert,
   info: Info,
 }
 
 const KIND_LABEL: Record<ActivityKind, string> = {
-  'task-complete': 'task',
-  'ticket-filed': 'ticket',
-  'pr-verdict': 'review',
   'session-start': 'session',
+  'session-end': 'session end',
+  'ticket-filed': 'ticket',
+  'ticket-closed': 'closed',
+  'pr-opened': 'opened',
+  'pr-verdict': 'review',
+  'pr-merged': 'merged',
+  'tests-pass': 'tests',
+  'tests-fail': 'tests',
+  check: 'check',
+  doc: 'doc',
   'agent-run': 'agent',
+  'task-complete': 'task',
+  blocked: 'blocked',
   error: 'error',
   info: 'info',
 }
@@ -86,6 +113,8 @@ type Scope = 'all' | 'repo' | 'session'
 function ActivityTab({ ctx }: { ctx: TabContext }) {
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [scope, setScope] = useState<Scope>('all')
+  const [kindFilter, setKindFilter] = useState<string>('all')
+  const [query, setQuery] = useState('')
   const [, force] = useState(0) // re-tick relative times
   const newest = useRef<string>('') // id of the most recent event, for the live flash
 
@@ -105,12 +134,20 @@ function ActivityTab({ ctx }: { ctx: TabContext }) {
     }
   }, [])
 
-  const shown = events.filter((e) =>
+  const scoped = events.filter((e) =>
     scope === 'all'
       ? true
       : scope === 'repo'
         ? e.repoRoot === ctx.repoRoot
         : e.sessionId === ctx.sessionId,
+  )
+  // kind chips reflect what's actually present in the current scope
+  const kindsPresent = [...new Set(scoped.map((e) => e.kind))].sort()
+  const q = query.trim().toLowerCase()
+  const shown = scoped.filter(
+    (e) =>
+      (kindFilter === 'all' || e.kind === kindFilter) &&
+      (!q || `${e.title} ${e.detail || ''} ${e.repo || ''}`.toLowerCase().includes(q)),
   )
 
   const clear = async () => {
@@ -138,6 +175,31 @@ function ActivityTab({ ctx }: { ctx: TabContext }) {
           this session
         </Chip>
         <div className="flex-1" />
+        <select
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value)}
+          className="cursor-pointer rounded-md border border-[var(--gt-border)] bg-black/30 px-1.5 py-0.5 text-[11px] text-zinc-300 outline-none focus:border-[var(--gt-accent)]/60"
+        >
+          <option value="all">all kinds</option>
+          {kindsPresent.map((k) => (
+            <option key={k} value={k} className="bg-[var(--gt-panel)]">
+              {KIND_LABEL[k as ActivityKind] || k}
+            </option>
+          ))}
+        </select>
+        <div className="relative">
+          <Search
+            size={11}
+            strokeWidth={2}
+            className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-zinc-600"
+          />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="search…"
+            className="w-28 rounded-md border border-[var(--gt-border)] bg-black/30 py-0.5 pl-5 pr-1.5 text-[11px] text-zinc-200 outline-none focus:w-40 focus:border-[var(--gt-accent)]/60"
+          />
+        </div>
         <span className="text-[11px] tabular-nums text-zinc-600">{shown.length}</span>
         <button
           onClick={clear}
@@ -150,8 +212,9 @@ function ActivityTab({ ctx }: { ctx: TabContext }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {shown.length === 0 ? (
           <div className="p-6 text-[12px] text-zinc-600">
-            No activity yet. Finished turns, filed tickets, and session starts show up here (and as
-            macOS notifications).
+            {events.length === 0
+              ? 'No activity yet. Session starts, tickets, PRs, reviews, test runs, checks, docs, and agent runs show up here (and as macOS notifications).'
+              : 'No activity matches the current filters.'}
           </div>
         ) : (
           groupByDay(shown).map((g) => (

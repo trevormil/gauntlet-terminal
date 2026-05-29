@@ -522,9 +522,22 @@ ipcMain.handle('tickets:create', (_e, input: NewTicket) => {
   })
   return t
 })
-ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; priority?: string }) =>
-  updateTicket(repoRootOf(cur().cwd), slug, patch),
-)
+ipcMain.handle('tickets:update', (_e, slug: string, patch: { status?: string; priority?: string }) => {
+  const root = repoRootOf(cur().cwd)
+  const ok = updateTicket(root, slug, patch)
+  if (ok && patch.status === 'closed') {
+    const t = getTicket(root, slug)
+    emitActivity({
+      kind: 'ticket-closed',
+      title: `Ticket closed · #${t?.id ?? slug}`,
+      detail: t?.title,
+      repo: repoForCwd(cur().cwd)?.path || basename(root || ''),
+      repoRoot: root,
+      sessionId: cur().sessionId,
+    })
+  }
+  return ok
+})
 ipcMain.handle('skills:list', () => listSkills(repoRootOf(cur().cwd)))
 ipcMain.handle('mrs:list', () => listMrs(repoRootOf(cur().cwd)))
 ipcMain.handle('mrs:get', (_e, iid: number) => getMr(repoRootOf(cur().cwd), iid))

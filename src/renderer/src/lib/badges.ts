@@ -53,13 +53,24 @@ export const sessionStatusTone = (s: string): BadgeTone =>
 export const horizonTone = (h: string): BadgeTone =>
   h === 'now' ? 'accent' : h === 'next' ? 'blue' : 'mute'
 
-export const activityTone = (k: string): BadgeTone =>
-  k === 'task-complete'
-    ? 'green'
-    : k === 'ticket-filed'
-      ? 'accent'
-      : k === 'pr-verdict' || k === 'agent-run'
-        ? 'blue'
-        : k === 'error'
-          ? 'red'
-          : 'mute'
+// Tone per activity kind. Map (not ternary chain) so the richer kind set stays
+// readable; unknown kinds fall through to 'mute'.
+const ACTIVITY_TONES: Record<string, BadgeTone> = {
+  'task-complete': 'green',
+  'tests-pass': 'green',
+  'pr-merged': 'green',
+  'ticket-closed': 'green',
+  'ticket-filed': 'accent',
+  'pr-verdict': 'blue',
+  'pr-opened': 'blue',
+  'agent-run': 'blue',
+  blocked: 'yellow',
+  'tests-fail': 'red',
+  error: 'red',
+  check: 'mute',
+  doc: 'mute',
+  'session-start': 'mute',
+  'session-end': 'mute',
+  info: 'mute',
+}
+export const activityTone = (k: string): BadgeTone => ACTIVITY_TONES[k] ?? 'mute'

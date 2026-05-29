@@ -166,7 +166,7 @@ export async function mergeMr(repoRoot: string, iid: number): Promise<{ ok: bool
     const label = repoForCwd(repoRoot)?.path || repoRoot.split('/').pop() || ''
     const sym = forge.forgeFor(repoRoot).sym
     emitActivity(
-      { kind: 'pr-verdict', title: `Merged ${sym}${iid}`, detail: label, repo: label, repoRoot },
+      { kind: 'pr-merged', title: `Merged ${sym}${iid}`, detail: label, repo: label, repoRoot },
       { notify: true },
     )
   }

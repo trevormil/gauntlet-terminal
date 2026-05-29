@@ -22,8 +22,8 @@ import { sendUrl } from './telegram-api'
 // fall back to the project-template /notify script if it's present.
 const TG_SCRIPT = join(homedir(), '.claude', 'bin', 'telegram-notify.sh')
 function tgKind(ev: ActivityEvent): 'done' | 'blocked' | 'info' {
-  if (ev.kind === 'error') return 'blocked'
-  if (ev.kind === 'task-complete') return 'done'
+  if (ev.kind === 'error' || ev.kind === 'tests-fail' || ev.kind === 'blocked') return 'blocked'
+  if (ev.kind === 'task-complete' || ev.kind === 'tests-pass' || ev.kind === 'pr-merged') return 'done'
   if (ev.kind === 'agent-run')
     return /failed|interrupted/i.test(ev.title) ? 'blocked' : /done/i.test(ev.title) ? 'done' : 'info'
   return 'info'
@@ -57,12 +57,25 @@ function sendTelegram(ev: ActivityEvent) {
 const LOG = join(homedir(), '.config', 'TerMinal', 'activity.jsonl')
 const MAX_KEEP = 2000 // cap the on-disk log
 
+// Canonical activity kinds — workflow checkpoints emitted by the app AND by the
+// skills (project-template/.claude/bin/activity + bin/gt-notify emit these by
+// name). Keep in sync with src/renderer/src/lib/types.ts and the tab's ICON/tone
+// maps. Unknown kinds still render (Info icon + mute tone fallbacks).
 export type ActivityKind =
-  | 'task-complete'
-  | 'ticket-filed'
-  | 'pr-verdict'
   | 'session-start'
+  | 'session-end'
+  | 'ticket-filed'
+  | 'ticket-closed'
+  | 'pr-opened'
+  | 'pr-verdict'
+  | 'pr-merged'
+  | 'tests-pass'
+  | 'tests-fail'
+  | 'check'
+  | 'doc'
   | 'agent-run'
+  | 'task-complete'
+  | 'blocked'
   | 'error'
   | 'info'
 
@@ -77,15 +90,24 @@ export type ActivityEvent = {
   sessionId?: string
 }
 
-// which kinds raise a macOS notification (vs. log-only). task/ticket/pr matter;
-// session-start is just feed context.
+// which kinds raise a macOS/Telegram notification (vs. log-only feed context).
+// High-signal checkpoints ping; routine/contextual ones are log-only.
 const NOTIFY: Record<ActivityKind, boolean> = {
-  'task-complete': true,
-  'ticket-filed': true,
-  'pr-verdict': true,
-  'agent-run': true,
-  error: true,
   'session-start': false,
+  'session-end': false,
+  'ticket-filed': true,
+  'ticket-closed': false,
+  'pr-opened': false,
+  'pr-verdict': true,
+  'pr-merged': true,
+  'tests-pass': false,
+  'tests-fail': true,
+  check: false,
+  doc: false,
+  'agent-run': true,
+  'task-complete': true,
+  blocked: true,
+  error: true,
   info: false,
 }
 

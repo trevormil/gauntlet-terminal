@@ -8,8 +8,10 @@
 // Usage:
 //   gt-notify <kind> "<title>" [--detail "..."] [--repo "..."] \
 //             [--repo-root "..."] [--session "..."]
-//   kind: task-complete | ticket-filed | pr-verdict | session-start |
-//         agent-run | error | info
+//   kind: session-start | session-end | ticket-filed | ticket-closed |
+//         pr-opened | pr-verdict | pr-merged | tests-pass | tests-fail |
+//         check | doc | agent-run | task-complete | blocked | error | info
+//         (free string; unknown kinds render with a fallback icon)
 //
 // NOTE: behavior-identical to GT_NOTIFY_SRC in src/main/env.ts (the app's
 // "Install gt-notify" action writes an equivalent plain-JS copy).
