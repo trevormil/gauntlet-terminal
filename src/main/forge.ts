@@ -19,6 +19,7 @@ export type RawMr = {
   sourceBranch: string
   draft: boolean
   headShort: string // 7-char head sha, for review-artifact staleness
+  labels: string[] // forge labels (gh + glab). The 'auto-mergeable' label is the project-template convention for low-risk PRs (docs/tickets/reports only).
 }
 export type RawMrDetail = RawMr & { description: string; targetBranch: string }
 export type CiJob = { id: number; name: string; stage: string; status: string; webUrl: string }
@@ -71,6 +72,7 @@ export function ghToRaw(m: any): RawMr {
     sourceBranch: m.headRefName || '',
     draft: !!m.isDraft,
     headShort: String(m.headRefOid || '').slice(0, 7),
+    labels: normLabels(m.labels),
   }
 }
 
@@ -85,6 +87,7 @@ export function glabToRaw(m: any): RawMr {
     sourceBranch: m.source_branch || m.sourceBranch || '',
     draft: !!(m.draft ?? m.work_in_progress),
     headShort: String(m.sha || m.diff_refs?.head_sha || '').slice(0, 7),
+    labels: normLabels(m.labels),
   }
 }
 
@@ -146,7 +149,20 @@ function run(
   })
 }
 
-const GH_LIST_FIELDS = 'number,title,state,author,headRefName,isDraft,url,headRefOid'
+const GH_LIST_FIELDS = 'number,title,state,author,headRefName,isDraft,url,headRefOid,labels'
+
+// Labels normalizer — gh returns [{name,color,...}], glab returns strings or
+// [{name,...}]. Coerce to a flat string[] either way.
+function normLabels(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const x of raw) {
+    if (typeof x === 'string') out.push(x)
+    else if (x && typeof x === 'object' && typeof (x as Record<string, unknown>).name === 'string')
+      out.push((x as Record<string, string>).name)
+  }
+  return out
+}
 const GH_VIEW_FIELDS = `${GH_LIST_FIELDS},baseRefName,body`
 
 // Fetch all lifecycle states (open + merged + closed) so the UI can browse past

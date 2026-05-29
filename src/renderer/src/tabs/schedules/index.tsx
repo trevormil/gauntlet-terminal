@@ -3,12 +3,12 @@ import {
   CalendarClock,
   Plus,
   Play,
-  Power,
   Trash2,
   RefreshCw,
   ChevronRight,
   ChevronDown,
   FileText,
+  X,
 } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import type { BadgeTone } from '../../components/ui'
@@ -25,6 +25,13 @@ function fmtWhen(ts?: number | null): string {
   const sameDay = d.toDateString() === now.toDateString()
   const t = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
   return sameDay ? t : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${t}`
+}
+function fmtDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`
+  return `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`
 }
 function reltime(ts?: number): string {
   if (!ts) return ''
@@ -395,24 +402,36 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                     {s.lastRun ? ` · last ${reltime(s.lastRun)}` : ''}
                   </div>
                 </div>
-                <label className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-500">
-                  <input
-                    type="checkbox"
-                    checked={s.enabled}
-                    onChange={async (e) => {
-                      await window.gt.schedules.toggle(s.id, e.target.checked)
-                      reload()
-                    }}
+                {/* iOS-style pill switch — clearer at a glance than a checkbox */}
+                <button
+                  onClick={async () => {
+                    await window.gt.schedules.toggle(s.id, !s.enabled)
+                    reload()
+                  }}
+                  title={s.enabled ? 'enabled — click to pause' : 'paused — click to enable'}
+                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                    s.enabled ? 'bg-[var(--gt-green)]/70' : 'bg-zinc-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform ${
+                      s.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                    }`}
                   />
-                  <Power size={11} strokeWidth={2} />
-                </label>
+                </button>
               </div>
-              <div className="mt-2 flex items-center gap-3 text-[11px]">
+
+              {/* Actions strip — icon buttons with consistent hover affordance. */}
+              <div className="mt-2 flex items-center gap-1 text-[11px]">
                 <button
                   onClick={() => openRuns(s.id)}
-                  className="inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-300"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
                 >
-                  {expanded === s.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {expanded === s.id ? (
+                    <ChevronDown size={12} strokeWidth={2} />
+                  ) : (
+                    <ChevronRight size={12} strokeWidth={2} />
+                  )}
                   runs
                 </button>
                 <button
@@ -420,48 +439,87 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                     await window.gt.schedules.runNow(s.id)
                     flash(`${s.agentTitle} started — see runs / Activity`)
                   }}
-                  className="inline-flex items-center gap-1 text-zinc-500 hover:text-[var(--gt-accent-light)]"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-[var(--gt-accent-light)]"
                 >
                   <Play size={11} strokeWidth={2.5} />
                   run now
                 </button>
+                <div className="flex-1" />
                 <button
                   onClick={async () => {
                     await window.gt.schedules.remove(s.id)
                     reload()
                   }}
-                  className="inline-flex items-center gap-1 text-zinc-500 hover:text-[var(--gt-red)]"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-zinc-600 hover:bg-white/5 hover:text-[var(--gt-red)]"
+                  title="Remove this schedule"
                 >
                   <Trash2 size={11} strokeWidth={2} />
-                  remove
                 </button>
               </div>
 
               {expanded === s.id && (
                 <div className="mt-2 space-y-1 border-t border-[var(--gt-border)]/50 pt-2">
                   {runs.length === 0 ? (
-                    <div className="text-[11px] text-zinc-600">No runs yet.</div>
+                    <div className="py-2 text-center text-[11px] text-zinc-600">
+                      No runs yet. Try “run now” above to fire one.
+                    </div>
                   ) : (
-                    runs.map((r) => (
-                      <div key={r.id} className="flex items-center gap-2 text-[11px]">
-                        <Badge tone={statusTone(r.status)}>{r.status}</Badge>
-                        <span className="text-zinc-500">{fmtWhen(r.startedAt)}</span>
-                        <span className="font-mono text-[10px] text-zinc-600">{r.branch}</span>
-                        <div className="flex-1" />
-                        <button
-                          onClick={async () => setLog({ runId: r.id, text: await window.gt.schedules.runLog(r.id) })}
-                          className="inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-300"
-                        >
-                          <FileText size={11} strokeWidth={2} />
-                          log
-                        </button>
-                      </div>
-                    ))
-                  )}
-                  {log && (
-                    <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[#0c0c11] p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
-                      {log.text || '… (no output yet)'}
-                    </pre>
+                    runs.map((r) => {
+                      const open = log?.runId === r.id
+                      const dur =
+                        r.endedAt && r.startedAt
+                          ? fmtDuration(r.endedAt - r.startedAt)
+                          : r.status === 'running'
+                            ? 'running…'
+                            : '—'
+                      return (
+                        <div key={r.id}>
+                          <button
+                            onClick={async () =>
+                              setLog(
+                                open
+                                  ? null
+                                  : { runId: r.id, text: await window.gt.schedules.runLog(r.id) },
+                              )
+                            }
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-left ${
+                              open ? 'bg-white/5' : 'hover:bg-white/5'
+                            }`}
+                          >
+                            <Badge tone={statusTone(r.status)}>{r.status}</Badge>
+                            <span className="text-zinc-500">{fmtWhen(r.startedAt)}</span>
+                            <span className="text-zinc-700">·</span>
+                            <span className="font-mono tabular-nums text-zinc-500">{dur}</span>
+                            <span className="text-zinc-700">·</span>
+                            <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-zinc-600">
+                              {r.branch}
+                            </span>
+                            <FileText
+                              size={11}
+                              strokeWidth={2}
+                              className={open ? 'text-[var(--gt-accent-light)]' : 'text-zinc-600'}
+                            />
+                          </button>
+                          {open && log && (
+                            <div className="mt-1 rounded-lg border border-[var(--gt-border)] bg-[#0c0c11]">
+                              <div className="flex items-center justify-between border-b border-[var(--gt-border)]/60 px-2 py-1">
+                                <span className="text-[10px] uppercase tracking-wider text-zinc-600">log</span>
+                                <button
+                                  onClick={() => setLog(null)}
+                                  className="rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300"
+                                  title="Close log"
+                                >
+                                  <X size={11} strokeWidth={2} />
+                                </button>
+                              </div>
+                              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
+                                {log.text || '… (no output yet)'}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
                   )}
                 </div>
               )}

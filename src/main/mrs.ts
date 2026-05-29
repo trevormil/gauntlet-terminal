@@ -57,6 +57,7 @@ export type Mr = {
   sourceBranch: string
   draft: boolean
   review: Review | null
+  labels: string[]
 }
 
 // `error` distinguishes a genuinely-empty list from a CLI failure, so the UI
@@ -79,6 +80,7 @@ export async function listMrs(repoRoot: string): Promise<MrListResult> {
       sourceBranch: m.sourceBranch,
       draft: m.draft,
       review: dir ? reviewForPrDir(dir, m.headShort) : null,
+      labels: m.labels,
     }
   })
   return { mrs }

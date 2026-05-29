@@ -83,6 +83,7 @@ describe('ghToRaw', () => {
       sourceBranch: 'feat/thing',
       draft: true,
       headShort: 'abcdef1',
+      labels: [],
     })
   })
 })
@@ -108,6 +109,7 @@ describe('glabToRaw', () => {
       sourceBranch: 'fix/bug',
       draft: true,
       headShort: 'deadbee',
+      labels: [],
     })
   })
 })

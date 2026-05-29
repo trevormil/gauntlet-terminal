@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { GitPullRequest, TriangleAlert, GitBranch, ArrowUpRight, ChevronDown, ChevronRight } from 'lucide-react'
+import { GitPullRequest, TriangleAlert, GitBranch, ArrowUpRight, ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
+
+// project-template convention: agents tag their docs/ticket/report PRs with
+// this label so they're visually distinguishable from PRs that touch code.
+const AUTO_MERGEABLE_LABEL = 'auto-mergeable'
 import { Badge } from '../../components/ui'
 import { MrDetailView } from '../../components/MrDetail'
 import { PrAgentActions } from '../../components/PrAgentActions'
@@ -49,6 +53,12 @@ function MrRow({
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
             <Badge tone={stateTone(m.state)}>{m.state}</Badge>
+            {m.labels?.includes(AUTO_MERGEABLE_LABEL) && (
+              <Badge tone="green">
+                <Sparkles size={9} strokeWidth={2.5} className="mr-0.5" />
+                auto-mergeable
+              </Badge>
+            )}
             {m.review && <Badge tone={verdictTone(m.review.verdict)}>{m.review.verdict}</Badge>}
             {m.review && <Badge tone={testTone(m.review.testStatus)}>tests {m.review.testStatus}</Badge>}
             {m.review?.overall != null && <span className="text-zinc-400">score {m.review.overall}</span>}

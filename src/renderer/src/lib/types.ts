@@ -331,6 +331,7 @@ export type Mr = {
   sourceBranch: string
   draft: boolean
   review: Review | null
+  labels: string[]
 }
 
 export type SkillScope = 'project' | 'personal' | 'plugin'
