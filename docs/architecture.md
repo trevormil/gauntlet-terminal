@@ -63,7 +63,10 @@ Both are "just a folder" discovered with Vite `import.meta.glob`:
   (rate-limited).
 - `backlog.ts` — tickets from `<repo>/backlog/*.md` (frontmatter incl.
   `horizon`/`hitl`); create/update write back.
-- `mrs.ts` — merge/pull requests via `glab` (GitLab), enriched with review state.
+- `forge.ts` — the GitHub/GitLab seam: `forgeFor(repoRoot)` picks `gh`/`glab`
+  and the `PR`/`MR` + `#`/`!` vocabulary from the remote host (or the
+  `settings.forge` override). `mrs.ts` delegates here; the renderer is forge-agnostic.
+- `mrs.ts` — merge/pull requests via the forge adapter, enriched with review state.
 - `review.ts` — resolves code-review artifacts from in-repo `.reviews/<pr>/`
   (project-template) **or** the legacy autopilot-harness `prs/` store; handles
   the meta.json (commit-ordered) and no-meta (mtime) cases, with staleness.
@@ -73,6 +76,51 @@ Both are "just a folder" discovered with Vite `import.meta.glob`:
 - `scaffold.ts` — new-repo scaffolding from the project-template submodule (or a
   clone fallback in the packaged app).
 - `repo.ts` — `repoForCwd` (origin → host/owner/repo), `repoRootOf`, git status.
+- `settings.ts` — self-configuring persisted settings (every key has a working
+  default; `''` resolves at read time) + legacy-shape migration. `env.ts`
+  detects which of `claude`/`codex`/`gh`/`glab` are installed + authed.
+- `agents.ts` — on-demand + scheduled + factory agent runs, each in its own git
+  worktree; run records stream over IPC and persist for the Agents tab.
+- `events.ts`, `hitl.ts`, `factory-health.ts`, `cycle.ts`, `schedules.ts` +
+  `cron*.ts` + `launchd.ts`, `telegram*.ts` — the software-factory layer, below.
+
+## Software factory & observability
+
+A continuous, observable agent loop layered on top of the session shell. The
+human gate to `main`/`master` is never crossed by the app — agents stop at "PR
+open" and park true human-needs to HITL.
+
+**Append-only global stores** under `~/.config/TerMinal/` (cross-repo, work
+offline, survive a fresh clone):
+
+- `activity.jsonl` — the event feed. `events.ts` emits in-process (and notifies
+  per a `NOTIFY` map) **and** tails the file so *external* writers — the
+  project-template `.claude/bin/activity` hook, CI, any script — broadcast to the
+  renderer and trigger notifications too (deduped by event id). Events carry an
+  optional `ref:{ticket?,pr?}` join key.
+- `hitl.json` — the global HITL inbox (`hitl.ts`). `fileHitl` writes the item,
+  mirrors a `blocked` activity event, and fires a Telegram ping. Tab badge = open
+  count.
+- `schedules.json` + `cron-runs/` — the schedule store and per-run records.
+- agent-run records — in `agents.ts`, surfaced globally on the Agents tab.
+
+**Scheduling** (`schedules.ts` → `cron.ts`/`launchd.ts`): each enabled schedule
+is mirrored to a per-schedule **launchd** LaunchAgent that runs a headless runner
+(`bin/terminal-cron`, zero Electron imports, installed to
+`~/.config/TerMinal/bin`) so it fires even when the app is closed.
+`reconcileSchedules()` diffs launchd ↔ store to kill orphans. A failed (not
+cancelled) run auto-files a HITL item.
+
+**Aggregation** (`factory-health.ts`): a read-only roll-up over those stores —
+throughput windows, agent/cron success rates, recent failures, a daily
+sparkline, top repos. **Cycle time** (`cycle.ts`, pure + unit-tested) joins a
+ticket's events by `ref` (`ticket-filed{ticket}` → `pr-opened{ticket,pr}` →
+`pr-merged{pr}`) into median time-to-merge, the two stage splits, and a 7-day
+funnel.
+
+**Telegram** (`telegram*.ts`): native Bot API (token + a single authorized
+chat-id as the auth boundary) for notifications and inbound AFK commands, with
+the legacy `~/.claude/bin/telegram-*.sh` scripts as a fallback.
 
 ## Styling
 

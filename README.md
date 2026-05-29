@@ -26,6 +26,11 @@ mounted when you switch tabs, so a session never drops.
 
 Requires [bun](https://bun.sh) and the `claude` CLI on your `PATH`.
 
+> **Platform: macOS (Apple Silicon).** Packaging, scheduling (launchd), and the
+> "open in editor/browser" handoffs (`open -a`) assume macOS. The editor and
+> browser default to **Cursor** and **Brave** but are configurable in Settings.
+> `bun run dev` may run on other platforms, but the OS-specific features won't.
+
 ```bash
 git clone https://github.com/trevormil/TerMinal.git
 cd TerMinal
@@ -82,17 +87,33 @@ repo-aware — each shows based on the attached session's repo.
   "PR #N" and "MR !N"). Each opens a full review surface: description, the
   **review** body, **findings** + **suggestions**, a syntax-highlighted **diff**
   (unified/split, per-file "viewed"), forge **CI status**, and a **merge** button.
-- **HITL** — tickets flagged `hitl: true`: the things waiting on a human
-  (approvals, creds, merges). The tab carries a live count.
-- **Agents** — on-demand [Codex](https://github.com/openai/codex) agents you
-  **Run** from a button. See [Agents](#agents) below.
+- **HITL** — a **global, cross-repo inbox** (`~/.config/TerMinal/hitl.json`) of
+  the things waiting on a human: approvals, credentials, decisions, hard
+  blockers. Agents file items here (via `.claude/bin/hitl`), each fires a
+  Telegram ping, and the tab carries a live red count. Resolve / reopen / remove
+  from one place — no need to open each repo.
+- **Factory** — toggle the autonomous [`/factory`](#factory) orchestrator on for
+  the attached repo, watch its live log, and read cross-repo **factory health**:
+  throughput (24h/7d), **cycle time** (ticket-filed → PR-merged, with stage
+  splits + a funnel), agent/cron success rates, a 14-day activity sparkline,
+  recent failures, and the most active repos.
+- **Schedules** — real **macOS launchd cron** for agents: run an agent on an
+  interval, at a calendar time, or via a raw cron expression — it fires even
+  when TerMinal is closed. One **global** view across every repo with a per-repo
+  filter, an **All runs** history (status / log per run), and a reconcile button
+  that removes orphaned launchd jobs.
+- **Agents** — on-demand agents (**Codex** or **Claude**) you **Run** from a
+  button. See [Agents](#agents) below.
 - **Notes** — markdown editor (edit/split/preview). Repo notes live at
   `<repo>/.TerMinal/notes.md` (auto-gitignored); Global notes span
   everything. Both autosave.
 - **Files** — a lightweight editor: CodeMirror (real syntax highlighting,
   find/replace), multi-file tabs, a file tree with type icons + git-ignored
   dimming, and project-wide search (`git grep`). ⌘S save · ⌘W close · ⌘F find ·
-  ⌘⇧F project search.
+  ⌘⇧F project search. Open the current file/dir in your editor (Cursor by
+  default, configurable) from a button.
+- **Browser** — an in-app webview for quick lookups, plus **Open in Brave**
+  (configurable) to hand the URL to a real browser with your wallet extensions.
 - **Activity** — a realtime feed + macOS notifications: a session finishing a
   turn, a ticket filed, a session start. Global store, filterable to this
   repo/session.
@@ -162,6 +183,34 @@ pinned submodule:
 ```bash
 git submodule update --remote templates/project-template
 ```
+
+## <a name="factory"></a>Software factory
+
+The factory surfaces turn the workflow into a continuous, observable loop —
+agents do design → ticket → branch → PR → review/CI; the **merge to
+`main`/`master` is always human-only** and never bypassed.
+
+- **`/factory`** (a project-template skill) is a continuous orchestrator: it
+  reconciles ticket state with merged PRs, runs `/stacked-mr` passes (build a
+  stack TDD-first → batch-review to the bar → handle verdicts), and repeats
+  until the in-scope backlog is dry. No budget, per-repo, claude or codex. The
+  **Factory tab** toggles it on and streams its log.
+- **Schedules** registers real **launchd** jobs so agents run on a cadence even
+  when TerMinal is closed (a headless runner ships in the app bundle and is
+  installed to `~/.config/TerMinal/bin`). A failed (not cancelled) scheduled run
+  auto-files a HITL item.
+- **HITL** is the single place agents reach you. Items live in a global
+  `~/.config/TerMinal/hitl.json`, get a Telegram ping when filed, and show a red
+  badge until resolved — across every repo.
+- **Cycle time** is measured by linking a ticket's lifecycle events through join
+  keys (`ticket-filed{ticket}` → `pr-opened{ticket,pr}` → `pr-merged{pr}` →
+  `ticket-closed{ticket}`): median time-to-merge, the filed→open and open→merge
+  stage splits, and a 7-day funnel — all on the Factory tab. Skills emit these
+  via `.claude/bin/activity --ticket N --pr N`.
+
+All of it reads from append-only stores under `~/.config/TerMinal/`
+(`activity.jsonl`, `cron-runs/`, `hitl.json`), so the views work offline and
+anything — a CI job, a shell script — can participate by appending an event.
 
 ## <a name="setup"></a>Setup & settings
 
