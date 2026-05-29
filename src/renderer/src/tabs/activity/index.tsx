@@ -24,6 +24,16 @@ const ICON: Record<ActivityKind, LucideIcon> = {
   info: Info,
 }
 
+const KIND_LABEL: Record<ActivityKind, string> = {
+  'task-complete': 'task',
+  'ticket-filed': 'ticket',
+  'pr-verdict': 'review',
+  'session-start': 'session',
+  'agent-run': 'agent',
+  error: 'error',
+  info: 'info',
+}
+
 function reltime(ts: number): string {
   const s = (Date.now() - ts) / 1000
   if (s < 10) return 'just now'
@@ -31,6 +41,29 @@ function reltime(ts: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
+}
+
+// Day bucket label for the timeline dividers (Today / Yesterday / weekday / date).
+function dayLabel(ts: number): string {
+  const d = new Date(ts)
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const diff = Math.round((startOf(new Date()) - startOf(d)) / 86_400_000)
+  if (diff <= 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  if (diff < 7) return d.toLocaleDateString(undefined, { weekday: 'long' })
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+// Group the (already newest-first) events into consecutive day buckets.
+function groupByDay(events: ActivityEvent[]): { label: string; items: ActivityEvent[] }[] {
+  const groups: { label: string; items: ActivityEvent[] }[] = []
+  for (const e of events) {
+    const label = dayLabel(e.ts)
+    const last = groups[groups.length - 1]
+    if (last && last.label === label) last.items.push(e)
+    else groups.push({ label, items: [e] })
+  }
+  return groups
 }
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -121,41 +154,67 @@ function ActivityTab({ ctx }: { ctx: TabContext }) {
             macOS notifications).
           </div>
         ) : (
-          shown.map((e) => {
-            const Icon = ICON[e.kind] || Info
-            return (
-              <div
-                key={e.id}
-                className={`flex items-start gap-2.5 border-b border-[var(--gt-border)]/50 px-4 py-2.5 ${
-                  e.id === newest.current ? 'gt-pop-in' : ''
-                }`}
-              >
-                <span
-                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${badgeClasses(
-                    activityTone(e.kind),
-                  )}`}
-                >
-                  <Icon size={12} strokeWidth={2.25} />
+          groupByDay(shown).map((g) => (
+            <div key={g.label}>
+              <div className="sticky top-0 z-10 flex items-center gap-2 bg-[var(--gt-bg)]/90 px-4 py-1.5 backdrop-blur">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  {g.label}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-100">{e.title}</span>
-                    <span className="shrink-0 text-[10.5px] tabular-nums text-zinc-600">
-                      {reltime(e.ts)}
-                    </span>
-                  </div>
-                  {e.detail && (
-                    <div className="truncate text-[11.5px] text-zinc-500" title={e.detail}>
-                      {e.detail}
-                    </div>
-                  )}
-                  {e.repo && scope === 'all' && (
-                    <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{e.repo}</div>
-                  )}
-                </div>
+                <span className="text-[10px] tabular-nums text-zinc-700">{g.items.length}</span>
+                <div className="h-px flex-1 bg-[var(--gt-border)]/50" />
               </div>
-            )
-          })
+              {g.items.map((e) => {
+                const Icon = ICON[e.kind] || Info
+                const tone = activityTone(e.kind)
+                const isNew = e.id === newest.current
+                return (
+                  <div
+                    key={e.id}
+                    className={`group relative flex gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03] ${
+                      isNew ? 'gt-pop-in' : ''
+                    }`}
+                  >
+                    {/* timeline rail: a continuous line with the kind node sitting on it */}
+                    <div className="relative flex w-5 shrink-0 justify-center">
+                      <span className="absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 bg-[var(--gt-border)]/70" />
+                      <span
+                        className={`relative z-10 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border bg-[var(--gt-bg)] ${badgeClasses(
+                          tone,
+                        )} ${isNew ? 'gt-pulse' : ''}`}
+                      >
+                        <Icon size={11} strokeWidth={2.25} />
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-100">{e.title}</span>
+                        <span className="shrink-0 text-[10.5px] tabular-nums text-zinc-600">
+                          {reltime(e.ts)}
+                        </span>
+                      </div>
+                      {e.detail && (
+                        <div className="truncate text-[11.5px] text-zinc-500" title={e.detail}>
+                          {e.detail}
+                        </div>
+                      )}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={`rounded-full border px-1.5 py-px text-[9.5px] font-medium uppercase tracking-wide ${badgeClasses(
+                            tone,
+                          )}`}
+                        >
+                          {KIND_LABEL[e.kind] || e.kind}
+                        </span>
+                        {e.repo && scope === 'all' && (
+                          <span className="truncate font-mono text-[10px] text-zinc-600">{e.repo}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ))
         )}
       </div>
     </div>
