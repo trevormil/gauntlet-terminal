@@ -149,14 +149,17 @@ function run(
 const GH_LIST_FIELDS = 'number,title,state,author,headRefName,isDraft,url,headRefOid'
 const GH_VIEW_FIELDS = `${GH_LIST_FIELDS},baseRefName,body`
 
+// Fetch all lifecycle states (open + merged + closed) so the UI can browse past
+// MRs and their review artifacts, not just open ones. The renderer filters by
+// state client-side (default: open), so this single call backs every filter.
 export async function listRaw(repoRoot: string): Promise<ListResult> {
   const f = forgeFor(repoRoot)
   if (f.kind === 'github') {
-    const r = await run('gh', ['pr', 'list', '--state', 'open', '--limit', '50', '--json', GH_LIST_FIELDS], repoRoot)
+    const r = await run('gh', ['pr', 'list', '--state', 'all', '--limit', '100', '--json', GH_LIST_FIELDS], repoRoot)
     if (r.err) return { items: [], error: forgeErrorReason('gh', r.err, r.stderr) }
     return { items: parseList('github', r.stdout) }
   }
-  const r = await run('glab', ['mr', 'list', '-F', 'json', '-P', '50'], repoRoot)
+  const r = await run('glab', ['mr', 'list', '--all', '-F', 'json', '-P', '100'], repoRoot)
   if (r.err) return { items: [], error: forgeErrorReason('glab', r.err, r.stderr) }
   return { items: parseList('gitlab', r.stdout) }
 }

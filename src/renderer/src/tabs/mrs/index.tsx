@@ -7,12 +7,22 @@ import { MrMergeButton } from '../../components/MrMergeButton'
 import { verdictTone, testTone, stateTone } from '../../lib/badges'
 import type { Tab, Mr, TabContext } from '../../lib/types'
 
+type StateFilter = 'open' | 'merged' | 'closed' | 'all'
+const STATE_FILTERS: StateFilter[] = ['open', 'merged', 'closed', 'all']
+// UI filter → normalized forge state ('open' chip maps to the 'opened' state).
+function matchesFilter(state: string, f: StateFilter): boolean {
+  if (f === 'all') return true
+  if (f === 'open') return state === 'opened'
+  return state === f
+}
+
 function MrList({
   mrs,
   error,
   label,
   sym,
   cli,
+  filter,
   onOpen,
   onMerged,
 }: {
@@ -21,6 +31,7 @@ function MrList({
   label: string
   sym: string
   cli: string
+  filter: StateFilter
   onOpen: (iid: number) => void
   onMerged: () => void
 }) {
@@ -37,7 +48,11 @@ function MrList({
       </div>
     )
   if (mrs.length === 0)
-    return <div className="p-6 text-[12px] text-zinc-600">No open {label}s for this repo.</div>
+    return (
+      <div className="p-6 text-[12px] text-zinc-600">
+        No {filter === 'all' ? '' : `${filter} `}{label}s for this repo.
+      </div>
+    )
   return (
     <div className="space-y-2 p-4">
       {mrs.map((m) => (
@@ -93,12 +108,15 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
   const [mrs, setMrs] = useState<Mr[] | null>(null)
   const [error, setError] = useState<string | undefined>(undefined)
   const [selectedMrIid, setSelectedMrIid] = useState<number | null>(null)
+  const [filter, setFilter] = useState<StateFilter>('open')
 
   const hasRemote = !!ctx.repoPath
   const label = ctx.forgeLabel
   const sym = ctx.forgeSym
   const cli = ctx.forgeKind === 'github' ? 'gh' : 'glab'
   const fullName = label === 'PR' ? 'Pull Requests' : 'Merge Requests'
+  const count = (f: StateFilter) => (mrs ? mrs.filter((m) => matchesFilter(m.state, f)).length : 0)
+  const visible = mrs ? mrs.filter((m) => matchesFilter(m.state, filter)) : mrs
   const refresh = () =>
     window.gt.listMrs().then((r) => {
       setMrs(r.mrs)
@@ -132,12 +150,27 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
 
   return (
     <div className="flex h-full flex-col bg-[var(--gt-bg)]">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--gt-border)] px-4 py-2">
         <GitPullRequest size={14} strokeWidth={2} className="text-zinc-400" />
-        <span className="text-[12px] font-semibold text-zinc-200">
-          {fullName}{hasRemote && mrs ? ` (${mrs.filter((m) => m.state === 'opened').length})` : ''}
-        </span>
+        <span className="text-[12px] font-semibold text-zinc-200">{fullName}</span>
         <span className="text-[11px] text-zinc-600">{ctx.repoPath || ctx.repoRoot.replace(/^.*\//, '')}</span>
+        {hasRemote && mrs && (
+          <div className="ml-auto flex items-center gap-1">
+            {STATE_FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] capitalize transition-colors ${
+                  filter === f
+                    ? 'border-[var(--gt-accent)] bg-[var(--gt-accent)]/15 text-zinc-100'
+                    : 'border-[var(--gt-border)] text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {f} <span className="tabular-nums text-zinc-500">{count(f)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!hasRemote ? (
@@ -147,11 +180,12 @@ function MrsTab({ ctx }: { ctx: TabContext }) {
           </div>
         ) : (
           <MrList
-            mrs={mrs}
+            mrs={visible}
             error={error}
             label={label}
             sym={sym}
             cli={cli}
+            filter={filter}
             onOpen={setSelectedMrIid}
             onMerged={refresh}
           />
