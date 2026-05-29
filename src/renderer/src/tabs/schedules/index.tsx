@@ -332,6 +332,25 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
     return () => off()
   }, [])
 
+  // Live log tail while a running cron job's log is open. Polls every 1.5s and
+  // updates the inline log pane so the operator sees output as `script -q`
+  // streams claude/codex stdout, instead of having to re-click "log".
+  useEffect(() => {
+    if (!log) return
+    const targetRun = [...runs, ...(allRuns || [])].find((r) => r.id === log.runId)
+    if (!targetRun || targetRun.status !== 'running') return
+    let alive = true
+    const tick = async () => {
+      const text = await window.gt.schedules.runLog(log.runId)
+      if (alive && text !== log.text) setLog({ runId: log.runId, text })
+    }
+    const id = setInterval(tick, 1500)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [log?.runId, log?.text, runs, allRuns])
+
   // Global view: repo options span every repo that has a schedule or a run —
   // no need to switch the active session to manage another repo's jobs.
   const repoOptions = useMemo(() => {

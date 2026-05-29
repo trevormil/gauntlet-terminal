@@ -605,7 +605,12 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
       ...(spec.model ? { TERMINAL_MODEL: spec.model } : {}),
     }
     const cmd = scriptPath ? shq(scriptPath) : buildCmd(spec.engine, worktree, step.prompt, spec.model)
-    const p = spawn(LOGIN_SHELL, ['-l', '-c', cmd], {
+    // Wrap the spawn in `script -q /dev/null` so claude/codex think they're on
+    // a TTY and stream output as it's generated. Without this, `claude -p`
+    // buffers everything until exit and the run log shows nothing mid-run
+    // (the same fix shipped to bin/terminal-cron). Pipes still carry the
+    // streamed bytes back to Node for live render via agents:output IPC.
+    const p = spawn('script', ['-q', '/dev/null', LOGIN_SHELL, '-l', '-c', cmd], {
       cwd: worktree,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
