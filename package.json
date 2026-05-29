@@ -1,7 +1,7 @@
 {
   "name": "terminal",
   "version": "0.1.0",
-  "description": "An alt-terminal for Claude Code: hosts the real CLI with a pluggable copilot sidebar.",
+  "description": "A standalone software factory for coding agents: hosts the real Claude Code / Codex CLI with a live cockpit, autonomous build loop, scheduling, and cross-repo observability.",
   "author": "Trevor Miller",
   "license": "MIT",
   "repository": {

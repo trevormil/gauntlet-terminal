@@ -1,7 +1,7 @@
 <div align="center">
   <img src="src/renderer/src/assets/logo.png" width="96" height="96" alt="TerMinal" />
   <h1>TerMinal</h1>
-  <p><strong>Your coding agent, with a cockpit.</strong></p>
+  <p><strong>A standalone software factory for coding agents.</strong></p>
 </div>
 
 <p align="center">
@@ -12,17 +12,24 @@
   <img src="docs/tabs.png" width="900" alt="TerMinal tab bar" />
 </p>
 
-An alt-terminal for [Claude Code](https://claude.com/claude-code). One window
-hosts **many Claude sessions** as top tabs — each runs the real `claude` CLI in
-its own PTY and carries its own **cockpit**: a sidebar of live telemetry for
-*that* session. Context-window %, token burn, your plan's **5-hour + weekly
+**A standalone macOS app that runs your coding agents as a software factory.**
+TerMinal hosts the real [Claude Code](https://claude.com/claude-code) CLI (and
+[Codex](https://github.com/openai/codex)) — many sessions as top tabs, each in
+its own PTY — and wraps them in a continuous, observable build loop: backlog →
+branch → PR → review → **you** merge. The human gate to `main` is never crossed
+by the app; agents stop at "PR open" and park anything that needs you to a
+global inbox.
+
+Every session carries its own **cockpit** — a sidebar of live telemetry for
+*that* session: context-window %, token burn, your plan's **5-hour + weekly
 usage** (a live `/usage` mirror), what the agent is doing _right now_, its todo
-list, and the latest code-review/TDD verdict — every number describes one
+list, and the latest code-review/TDD verdict. Every number describes one
 session, never an aggregate.
 
-Around the terminal sits a set of repo-aware **tabs** — sessions, tickets, pull
-requests, human-in-the-loop items, notes, and a file editor — so the work
-surface lives next to the agent instead of in a browser. The terminal stays
+Around the terminal sit repo-aware **tabs** that are the factory's control
+surface — tickets, MRs/PRs, an autonomous **[Factory](#factory)** orchestrator,
+**Schedules** (real launchd cron), a global **HITL** inbox, cross-repo
+**cycle-time** observability, plus notes and a file editor. The terminal stays
 mounted when you switch tabs, so a session never drops.
 
 > Built for a Gauntlet AI hackathon, then kept going. macOS-first. Dark theme,
