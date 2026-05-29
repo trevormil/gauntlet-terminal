@@ -50,16 +50,28 @@ function ScheduleForm({
   agents,
   onCancel,
   onSave,
+  onCustomSpawned,
 }: {
   agents: Agent[]
   onCancel: () => void
-  onSave: (agentId: string, engine: Engine, spec: ScheduleSpec) => Promise<void>
+  onSave: (agentId: string, engine: Engine, spec: ScheduleSpec, model?: string) => Promise<void>
+  onCustomSpawned: () => void
 }) {
+  const [mode, setMode] = useState<'form' | 'custom'>('form')
+  const [customText, setCustomText] = useState('')
+  const [customBusy, setCustomBusy] = useState(false)
+  const [customErr, setCustomErr] = useState('')
   const [agentId, setAgentId] = useState(agents[0]?.id || '')
   const [engine, setEngine] = useState<Engine>('claude')
+  const [model, setModel] = useState('')
   useEffect(() => {
     window.gt.settings.get().then((s) => setEngine(s.defaultEngine))
   }, [])
+  // Pre-fill model from the selected agent's default whenever the agent changes.
+  useEffect(() => {
+    const a = agents.find((x) => x.id === agentId)
+    setModel(a?.model || '')
+  }, [agentId, agents])
   const [kind, setKind] = useState<'interval' | 'calendar' | 'cron'>('calendar')
   const [everyN, setEveryN] = useState(1)
   const [unit, setUnit] = useState<'minutes' | 'hours'>('hours')
@@ -84,7 +96,7 @@ function ScheduleForm({
     setBusy(true)
     setErr('')
     try {
-      await onSave(agentId, engine, buildSpec())
+      await onSave(agentId, engine, buildSpec(), model.trim() || undefined)
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -92,8 +104,80 @@ function ScheduleForm({
     }
   }
 
+  const submitCustom = async () => {
+    const t = customText.trim()
+    if (!t) return
+    setCustomBusy(true)
+    setCustomErr('')
+    const r = await window.gt.schedules.design(t, engine)
+    setCustomBusy(false)
+    if (r && 'error' in r) {
+      setCustomErr(r.error)
+      return
+    }
+    onCustomSpawned()
+  }
+
   return (
     <div className="space-y-3 rounded-xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-3">
+      {/* Form / Custom toggle — same UX as the agents tab's new-agent flow. */}
+      <div className="flex items-center gap-0.5 rounded-md border border-[var(--gt-border)] p-0.5">
+        {(['form', 'custom'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`rounded-sm px-2 py-0.5 text-[11px] capitalize ${
+              mode === m ? 'bg-[var(--gt-accent)]/20 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {m === 'form' ? 'Form' : 'Describe in plain text'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'custom' && (
+        <div className="space-y-2">
+          <textarea
+            value={customText}
+            onChange={(e) => setCustomText(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitCustom()
+            }}
+            rows={3}
+            autoFocus
+            placeholder='e.g. "Run the docs agent every Monday at 9am" — reference any existing agent by name.'
+            className={`${FIELD} resize-y w-full`}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+              engine
+              <select value={engine} onChange={(e) => setEngine(e.target.value as Engine)} className={`${FIELD} w-auto`}>
+                <option value="claude">claude</option>
+                <option value="codex">codex</option>
+              </select>
+            </label>
+            {customErr && <span className="text-[11px] text-[var(--gt-red)]">{customErr}</span>}
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={onCancel} className="rounded-md px-2 py-1 text-[11px] text-zinc-400 hover:bg-white/5">
+                cancel
+              </button>
+              <button
+                onClick={submitCustom}
+                disabled={!customText.trim() || customBusy}
+                className="rounded-md bg-[var(--gt-accent)] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
+              >
+                {customBusy ? 'Spawning…' : `Design with ${engine}`}
+              </button>
+            </div>
+          </div>
+          <div className="text-[10.5px] text-zinc-600">
+            ⌘↵ to submit · the designer reads your agent list + existing schedules, parses the cadence, and writes the new entry directly. After it finishes the app reconciles launchd so the schedule becomes real.
+          </div>
+        </div>
+      )}
+
+      {mode === 'form' && (
+      <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] text-zinc-500">Run</span>
         <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className={FIELD}>
@@ -107,6 +191,19 @@ function ScheduleForm({
         <select value={engine} onChange={(e) => setEngine(e.target.value as Engine)} className={FIELD}>
           <option value="codex">codex</option>
           <option value="claude">claude</option>
+        </select>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className={FIELD}
+          title="Optional model — leave blank to use the engine default. Cheap models (haiku, gpt-5) suit lightweight schedules (health, deps audit)."
+        >
+          <option value="">(default model)</option>
+          {(engine === 'claude' ? ['haiku', 'sonnet', 'opus'] : ['gpt-5-codex', 'gpt-5', 'o4-mini']).map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -188,6 +285,8 @@ function ScheduleForm({
           cancel
         </button>
       </div>
+      </div>
+      )}
     </div>
   )
 }
@@ -238,8 +337,8 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
     setRuns(await window.gt.schedules.runs(id))
   }
 
-  const save = async (agentId: string, engine: Engine, spec: ScheduleSpec) => {
-    const r = await window.gt.schedules.save({ agentId, engine, spec })
+  const save = async (agentId: string, engine: Engine, spec: ScheduleSpec, model?: string) => {
+    const r = await window.gt.schedules.save({ agentId, engine, spec, model })
     if (r && 'error' in r) throw new Error(r.error)
     setCreating(false)
     reload()
@@ -320,7 +419,21 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
         {view === 'schedules' &&
           creating &&
           (agents.length ? (
-            <ScheduleForm agents={agents} onCancel={() => setCreating(false)} onSave={save} />
+            <ScheduleForm
+              agents={agents}
+              onCancel={() => setCreating(false)}
+              onSave={save}
+              onCustomSpawned={async () => {
+                setCreating(false)
+                flash('designer spawned · the schedule will appear after the run completes')
+                // After the designer finishes writing to schedules.json the app's
+                // next list/reconcile picks it up — give it a moment, then reconcile.
+                setTimeout(async () => {
+                  await window.gt.schedules.reconcile()
+                  reload()
+                }, 1500)
+              }}
+            />
           ) : (
             <div className="rounded-lg border border-[var(--gt-border)] p-3 text-[12px] text-zinc-600">
               No agents in this repo to schedule.

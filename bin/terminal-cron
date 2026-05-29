@@ -475,10 +475,14 @@ async function runSchedule(id) {
   }
 
   // Inner command — same as before; what changes is the wrapper.
+  // Optional per-schedule model alias (claude: haiku/sonnet/opus; codex: model
+  // name). Lets a lightweight schedule (health, deps-quality) avoid burning the
+  // biggest model on every run.
+  const modelFlag = sched.model ? ` --model ${shq(sched.model)}` : ''
   const cmd =
     sched.engine === 'claude'
-      ? `claude -p ${shq(sched.prompt)} --dangerously-skip-permissions`
-      : `codex exec -s danger-full-access -C ${shq(worktree)} ${shq(sched.prompt)}`
+      ? `claude -p ${shq(sched.prompt)} --dangerously-skip-permissions${modelFlag}`
+      : `codex exec -s danger-full-access -C ${shq(worktree)}${modelFlag} ${shq(sched.prompt)}`
   const shell = process.env.SHELL || '/bin/zsh'
   writeFileSync(logFile, `▸ ${sched.agentTitle} · ${sched.engine}\n▸ branch ${branch}\n▸ ${cmd}\n\n`)
   const fd = openSync(logFile, 'a')

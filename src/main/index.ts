@@ -60,6 +60,7 @@ import {
   runTicketSpawn,
   runFactorySpawn,
   runDesignerSpawn,
+  runScheduleDesignerSpawn,
   runPrAgent,
   listPipelines,
   listRuns,
@@ -446,6 +447,9 @@ ipcMain.handle('agents:reset', (_e, id: string) => resetAgent(repoRootOf(cur().c
 ipcMain.handle('agents:design', (_e, text: string, engine: Engine, scope: 'repo' | 'global') =>
   runDesignerSpawn(repoRootOf(cur().cwd), text, engine, scope),
 )
+ipcMain.handle('schedules:design', (_e, text: string, engine: Engine) =>
+  runScheduleDesignerSpawn(repoRootOf(cur().cwd), text, engine),
+)
 ipcMain.handle('agents:pipelines', () => listPipelines())
 ipcMain.handle('personas:list', () => readPersonas(repoRootOf(cur().cwd)))
 ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine, persona?: string, pipeline?: string) =>
@@ -480,7 +484,7 @@ ipcMain.handle('schedules:list', () => {
 })
 ipcMain.handle(
   'schedules:save',
-  (_e, input: { id?: string; agentId: string; engine: Engine; spec: ScheduleSpec; enabled?: boolean }) => {
+  (_e, input: { id?: string; agentId: string; engine: Engine; model?: string; spec: ScheduleSpec; enabled?: boolean }) => {
     const root = repoRootOf(cur().cwd)
     if (!root) return { error: 'not a git repo' }
     const agent = readAgents(root).find((a) => a.id === input.agentId)
@@ -491,6 +495,7 @@ ipcMain.handle(
       agentId: agent.id,
       agentTitle: agent.title,
       engine: input.engine || agent.engine || 'codex',
+      model: input.model ?? agent.model,
       prompt: agent.prompt, // snapshot — runner uses this offline
       spec: input.spec,
       enabled: input.enabled ?? true,

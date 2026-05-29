@@ -20,6 +20,7 @@ export type Schedule = {
   agentId: string
   agentTitle: string
   engine: Engine
+  model?: string // optional per-engine model alias (claude: haiku/sonnet/opus; codex: model name). Cron runner passes as --model <name>.
   prompt: string // snapshot of the agent prompt at save time (runner uses this)
   spec: ScheduleSpec
   enabled: boolean

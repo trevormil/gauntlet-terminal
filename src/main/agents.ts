@@ -36,6 +36,10 @@ export type Agent = {
   prompt: string
   opensPr?: boolean
   engine?: Engine // default engine; overridable per run
+  // Per-engine model alias (claude: "haiku"|"sonnet"|"opus"; codex: model name
+  // like "gpt-5-codex", "gpt-5", "o4-mini"). undefined → engine default. Lets
+  // lightweight agents (health, deps audit) avoid burning the biggest model.
+  model?: string
   // Run directly in the repo (no fresh worktree) — e.g. orchestrators like
   // /factory that manage their own worktrees internally, or quick additive ops.
   inPlace?: boolean
@@ -218,7 +222,9 @@ export function saveAgent(
     description: agent.description?.trim() || undefined,
     icon: agent.icon || undefined,
     engine: agent.engine,
+    model: agent.model?.trim() || undefined,
     opensPr: agent.opensPr,
+    inPlace: agent.inPlace,
   }
   const dir = join(repoRoot, '.agents')
   const f = join(dir, 'agents.json')
@@ -359,12 +365,13 @@ export function getRun(id: string): AgentRun | null {
 // Build the engine command. codex needs -C; claude uses cwd. Both run through a
 // login shell so $PATH has brew/local bins, and with stdin = /dev/null (else
 // they block reading "additional input from stdin" on an empty pipe).
-function buildCmd(engine: Engine, worktree: string, prompt: string): string {
+function buildCmd(engine: Engine, worktree: string, prompt: string, model?: string): string {
   const bin = enginePath(engine)
+  const modelFlag = model ? ` --model ${shq(model)}` : ''
   if (engine === 'claude') {
-    return `${shq(bin)} -p ${shq(prompt)} --dangerously-skip-permissions`
+    return `${shq(bin)} -p ${shq(prompt)} --dangerously-skip-permissions${modelFlag}`
   }
-  return `${shq(bin)} exec -s danger-full-access -C ${shq(worktree)} ${shq(prompt)}`
+  return `${shq(bin)} exec -s danger-full-access -C ${shq(worktree)}${modelFlag} ${shq(prompt)}`
 }
 
 // Pipeline definitions + composition are pure (see ./pipelines, unit-tested).
@@ -390,6 +397,8 @@ type RunSpec = {
   prRef?: { iid: number; sourceBranch: string }
   /** Run in the repo itself (no worktree) — for quick, additive ops like ticket filing. */
   inPlace?: boolean
+  /** Optional per-engine model alias passed to the CLI as `--model <name>`. */
+  model?: string
 }
 
 function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } {
@@ -511,7 +520,7 @@ function runSpec(repoRoot: string, spec: RunSpec): AgentRun | { error: string } 
   const runStep = () => {
     const step = spec.steps[stepIdx]
     if (spec.steps.length > 1) append(`\n━━ step ${stepIdx + 1}/${spec.steps.length} · ${step.label} ━━\n\n`)
-    const p = spawn(LOGIN_SHELL, ['-l', '-c', buildCmd(spec.engine, worktree, step.prompt)], {
+    const p = spawn(LOGIN_SHELL, ['-l', '-c', buildCmd(spec.engine, worktree, step.prompt, spec.model)], {
       cwd: worktree,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -558,6 +567,7 @@ export function runAgent(
     persona,
     pipeline,
     inPlace: agent.inPlace,
+    model: agent.model,
   })
 }
 
@@ -628,6 +638,81 @@ DO NOT open a PR, do not modify other agents, do not invent extra files.`
 }
 
 export { saveGlobalAgent }
+
+/** Spawn a claude/codex run that designs a new schedule entry from a natural-
+ *  language description. Reads the active agent list + existing schedules,
+ *  appends a new entry to ~/.config/TerMinal/schedules.json. After the run
+ *  completes the renderer reconciles + relaunches the LaunchAgent. */
+export function runScheduleDesignerSpawn(
+  repoRoot: string,
+  text: string,
+  engine: Engine,
+): AgentRun | { error: string } {
+  const t = text.trim()
+  if (!t) return { error: 'empty request' }
+  const schedulesFile = join(homedir(), '.config', 'TerMinal', 'schedules.json')
+  const agents = readAgents(repoRoot)
+  const agentSummary = agents.length
+    ? agents
+        .map(
+          (a) =>
+            `  - id: ${a.id} · title: ${a.title}${a.description ? ` · ${a.description}` : ''} · default-engine: ${a.engine || 'claude'} · opensPr: ${!!a.opensPr}`,
+        )
+        .join('\n')
+    : '  (none — the user should create an agent first via the Agents tab)'
+  const prompt = `You are designing a new TerMinal scheduled run based on the user's natural-language description.
+
+Available agents (use one of these IDS verbatim — do NOT invent a new one):
+
+${agentSummary}
+
+Target file: ${schedulesFile}
+  - If it does not exist, treat as an empty JSON array.
+  - If it exists, parse the JSON array, append the new entry, write back with 2-space indent.
+
+Schedule entry schema:
+{
+  "id": "<uuid v4>",
+  "repoRoot": "${repoRoot}",
+  "repoLabel": "<basename of repoRoot, or the GitHub/GitLab owner/repo if obvious>",
+  "agentId": "<one of the ids above>",
+  "agentTitle": "<the matching agent's title>",
+  "engine": "claude" | "codex",
+  "prompt": "<copy the matching agent's prompt verbatim>",
+  "spec": <a ScheduleSpec — see below>,
+  "enabled": true,
+  "createdAt": <epoch ms — use \`date +%s%3N\` or current ms>,
+  "lastStatus": "never"
+}
+
+ScheduleSpec options:
+  { "kind": "interval", "everyMinutes": <number> }                              # every N minutes
+  { "kind": "calendar", "minute": 0, "hour": 9 }                                # every day at 9:00
+  { "kind": "calendar", "minute": 30, "hour": 14, "weekdays": [1,3,5] }         # Mon/Wed/Fri 2:30pm
+  { "kind": "cron",     "expr": "30 9 * * 1-5" }                                # raw 5-field cron
+
+User's description:
+> ${t}
+
+PROCESS:
+  1. Parse the user's description to extract (a) which agent and (b) the cadence.
+  2. Match the agent by id from the list above. If no clear match, pick the closest reasonable one and NOTE that in your final summary so the user can adjust.
+  3. Generate a UUID v4 (uuidgen on macOS, or a /dev/urandom hex if not).
+  4. Read the existing ${schedulesFile} JSON array (or start with []).
+  5. Append the new entry. Write back with 2-space indent.
+  6. Print the new entry as JSON so the user can verify; mention the inferred cadence + agent in plain English ("Every Monday at 9am, run docs.").
+
+DO NOT open a PR. DO NOT modify the repo. Only write to ${schedulesFile}.
+
+After this completes the app reconciles schedules automatically — your new entry becomes a real LaunchAgent the next time it loads.`
+  return runSpec(repoRoot, {
+    id: 'design-schedule',
+    title: `Design schedule · ${t.slice(0, 48)}`,
+    steps: [{ label: 'design schedule', prompt }],
+    engine,
+    inPlace: true,
+  })
+}
 
 /** Turn a backlog ticket into an implementation run that opens a PR. */
 export function runTicketAgent(

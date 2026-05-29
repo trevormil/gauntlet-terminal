@@ -174,6 +174,7 @@ export type Agent = {
   prompt: string
   opensPr?: boolean
   engine?: Engine
+  model?: string
   inPlace?: boolean
   source?: 'default' | 'override' | 'repo' | 'global'
 }
@@ -210,6 +211,7 @@ export type Schedule = {
   agentId: string
   agentTitle: string
   engine: Engine
+  model?: string
   prompt: string
   spec: ScheduleSpec
   enabled: boolean
@@ -484,6 +486,7 @@ export type GtApi = {
       id?: string
       agentId: string
       engine: Engine
+      model?: string
       spec: ScheduleSpec
       enabled?: boolean
     }) => Promise<{ ok: true; id: string } | { error: string }>
@@ -496,6 +499,7 @@ export type GtApi = {
     removeAll: () => Promise<{ removed: number }>
     disabledList: () => Promise<string[]>
     disabledToggle: (id: string, disabled: boolean) => Promise<string[]>
+    design: (text: string, engine: Engine) => Promise<AgentRun | { error: string }>
   }
   hitl: {
     list: () => Promise<HitlItem[]>

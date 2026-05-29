@@ -93,6 +93,7 @@ const gt = {
     disabledList: () => ipcRenderer.invoke('schedules:disabled-list'),
     disabledToggle: (id: string, disabled: boolean) =>
       ipcRenderer.invoke('schedules:disabled-toggle', id, disabled),
+    design: (text: string, engine: string) => ipcRenderer.invoke('schedules:design', text, engine),
   },
   hitl: {
     list: () => ipcRenderer.invoke('hitl:list'),

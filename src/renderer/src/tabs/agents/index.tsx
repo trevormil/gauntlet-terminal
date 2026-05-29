@@ -233,6 +233,7 @@ function AgentEditor({
   const [title, setTitle] = useState(a?.title || '')
   const [description, setDescription] = useState(a?.description || '')
   const [engine, setEngine] = useState<Engine>(a?.engine || 'claude')
+  const [model, setModel] = useState(a?.model || '')
   const [opensPr, setOpensPr] = useState(!!a?.opensPr)
   const [prompt, setPrompt] = useState(a?.prompt || '')
   const [busy, setBusy] = useState(false)
@@ -246,6 +247,7 @@ function AgentEditor({
       title: title.trim(),
       description: description.trim(),
       engine,
+      model: model.trim() || undefined,
       opensPr,
       prompt,
     })
@@ -286,11 +288,28 @@ function AgentEditor({
           placeholder="Short description (optional)"
           className={FIELD}
         />
-        <div className="flex items-center gap-4">
-          <select value={engine} onChange={(e) => setEngine(e.target.value as Engine)} className={`${FIELD} w-auto`}>
-            <option value="codex">codex</option>
-            <option value="claude">claude</option>
-          </select>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+            engine
+            <select value={engine} onChange={(e) => setEngine(e.target.value as Engine)} className={`${FIELD} w-auto`}>
+              <option value="codex">codex</option>
+              <option value="claude">claude</option>
+            </select>
+          </label>
+          <label
+            className="flex items-center gap-1.5 text-[11px] text-zinc-500"
+            title="Optional. Lets a lightweight agent (health, deps audit) avoid burning the largest model on every run."
+          >
+            model
+            <select value={model} onChange={(e) => setModel(e.target.value)} className={`${FIELD} w-auto`}>
+              <option value="">(engine default)</option>
+              {(engine === 'claude' ? ['haiku', 'sonnet', 'opus'] : ['gpt-5-codex', 'gpt-5', 'o4-mini']).map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="flex items-center gap-1.5 text-[12px] text-zinc-300">
             <input type="checkbox" checked={opensPr} onChange={(e) => setOpensPr(e.target.checked)} />
             opens a PR
