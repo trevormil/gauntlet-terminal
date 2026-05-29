@@ -8,12 +8,19 @@ import { verdictTone, testTone, stateTone } from '../../lib/badges'
 import type { Tab, Mr, TabContext } from '../../lib/types'
 
 // Three buckets, Tickets-style. Default-collapsed groups match the "closed +
-// icebox collapsed" UX of the Tickets tab.
+// icebox collapsed" UX of the Tickets tab. Each group's header reuses
+// stateTone (yellow / green / red) for the colored Badge to match Tickets.
 type GroupId = 'open' | 'merged' | 'closed'
-const GROUPS: { id: GroupId; label: string; match: (state: string) => boolean }[] = [
-  { id: 'open', label: 'Open', match: (s) => s === 'opened' },
-  { id: 'merged', label: 'Merged', match: (s) => s === 'merged' },
-  { id: 'closed', label: 'Closed', match: (s) => s !== 'opened' && s !== 'merged' },
+const GROUPS: {
+  id: GroupId
+  label: string
+  // tone-key: pick a representative state that stateTone() maps to the right color
+  toneKey: string
+  match: (state: string) => boolean
+}[] = [
+  { id: 'open', label: 'open', toneKey: 'opened', match: (s) => s === 'opened' },
+  { id: 'merged', label: 'merged', toneKey: 'merged', match: (s) => s === 'merged' },
+  { id: 'closed', label: 'closed', toneKey: 'closed', match: (s) => s !== 'opened' && s !== 'merged' },
 ]
 const DEFAULT_COLLAPSED: GroupId[] = ['merged', 'closed']
 
@@ -114,22 +121,25 @@ function GroupedMrList({
   )
 
   return (
-    <div className="space-y-4 p-4">
+    <div>
       {groups.map((g) => {
-        const isCollapsed = collapsed.has(g.id)
+        const isOpen = !collapsed.has(g.id)
         return (
           <div key={g.id}>
             <button
               onClick={() => onToggle(g.id)}
-              className="mb-1.5 flex w-full items-center gap-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500 hover:text-zinc-300"
+              className="sticky top-0 z-10 flex w-full items-center gap-1.5 border-b border-[var(--gt-border)]/60 bg-[var(--gt-bg)] px-3 py-1.5 text-left hover:bg-white/5"
             >
-              {isCollapsed ? <ChevronRight size={12} strokeWidth={2.5} /> : <ChevronDown size={12} strokeWidth={2.5} />}
-              {g.label}
-              <span className="text-zinc-700">·</span>
-              <span className="tabular-nums text-zinc-600">{g.items.length}</span>
+              {isOpen ? (
+                <ChevronDown size={12} strokeWidth={2} className="text-zinc-500" />
+              ) : (
+                <ChevronRight size={12} strokeWidth={2} className="text-zinc-500" />
+              )}
+              <Badge tone={stateTone(g.toneKey)}>{g.label}</Badge>
+              <span className="text-[11px] tabular-nums text-zinc-600">{g.items.length}</span>
             </button>
-            {!isCollapsed && (
-              <div className="space-y-2">
+            {isOpen && (
+              <div className="space-y-2 p-4">
                 {g.items.map((m) => (
                   <MrRow key={m.iid} m={m} sym={sym} onOpen={onOpen} onMerged={onMerged} />
                 ))}
