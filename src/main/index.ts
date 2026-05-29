@@ -47,6 +47,8 @@ import {
 } from './telegram'
 import {
   readAgents,
+  saveAgent,
+  resetAgent,
   hasAgents as repoHasAgents,
   runAgent,
   runTicketAgent,
@@ -415,6 +417,10 @@ ipcMain.handle('settings:patch', (_e, patch: SettingsPatch) => {
   return next
 })
 ipcMain.handle('agents:list', () => readAgents(repoRootOf(cur().cwd)))
+ipcMain.handle('agents:save', (_e, agent: { id: string; title: string; prompt: string }) =>
+  saveAgent(repoRootOf(cur().cwd), agent),
+)
+ipcMain.handle('agents:reset', (_e, id: string) => resetAgent(repoRootOf(cur().cwd), id))
 ipcMain.handle('agents:pipelines', () => listPipelines())
 ipcMain.handle('personas:list', () => readPersonas(repoRootOf(cur().cwd)))
 ipcMain.handle('agents:run', (_e, agentId: string, engine?: Engine, persona?: string, pipeline?: string) =>

@@ -14,6 +14,11 @@ import {
   Trash2,
   FolderOpen,
   Clock,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  RotateCcw,
+  Plus,
   type LucideIcon,
 } from 'lucide-react'
 import { Badge } from '../../components/ui'
@@ -53,6 +58,120 @@ function reltime(ts: number): string {
   return `${Math.floor(s / 3600)}h`
 }
 
+const SOURCE: Record<string, { label: string; tone: BadgeTone }> = {
+  default: { label: 'default', tone: 'mute' },
+  override: { label: 'customized', tone: 'yellow' },
+  repo: { label: 'custom', tone: 'accent' },
+}
+// How the engine wraps the prompt at run time (worktree filled in per run).
+const runsAs = (engine: Engine): string =>
+  engine === 'claude'
+    ? "claude -p '<prompt>' --dangerously-skip-permissions"
+    : "codex exec -s danger-full-access -C <worktree> '<prompt>'"
+
+const FIELD =
+  'w-full rounded-lg border border-[var(--gt-border)] bg-black/30 px-2 py-1.5 text-[12px] text-zinc-200 outline-none focus:border-[var(--gt-accent)]/60'
+
+// Add / edit an agent. Saving writes <repo>/.agents/agents.json (overriding a
+// built-in default = same id). The id is immutable once set.
+function AgentEditor({
+  agent,
+  onClose,
+  onSaved,
+}: {
+  agent: Agent | 'new'
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const isNew = agent === 'new'
+  const a = isNew ? null : (agent as Agent)
+  const [id, setId] = useState(a?.id || '')
+  const [title, setTitle] = useState(a?.title || '')
+  const [description, setDescription] = useState(a?.description || '')
+  const [engine, setEngine] = useState<Engine>(a?.engine || 'codex')
+  const [opensPr, setOpensPr] = useState(!!a?.opensPr)
+  const [prompt, setPrompt] = useState(a?.prompt || '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async () => {
+    setBusy(true)
+    setErr('')
+    const r = await window.gt.agents.save({
+      id: id.trim(),
+      title: title.trim(),
+      description: description.trim(),
+      engine,
+      opensPr,
+      prompt,
+    })
+    setBusy(false)
+    if (r && 'error' in r) setErr(r.error)
+    else onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={onClose}>
+      <div
+        className="flex max-h-[86vh] w-[640px] flex-col gap-3 overflow-y-auto rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-zinc-100">{isNew ? 'New agent' : `Edit · ${a?.title}`}</h2>
+          <button onClick={onClose} className="rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-white/5">
+            cancel
+          </button>
+        </div>
+        {!isNew && a?.source !== 'repo' && (
+          <p className="text-[11px] text-[var(--gt-yellow)]">
+            Editing a built-in default — saving writes an override to{' '}
+            <span className="font-mono">.agents/agents.json</span>; “Reset” reverts to the default.
+          </p>
+        )}
+        <input
+          value={id}
+          onChange={(e) => setId(e.target.value)}
+          disabled={!isNew}
+          placeholder="id (kebab-case, e.g. triage-issues)"
+          className={`${FIELD} font-mono ${isNew ? '' : 'opacity-50'}`}
+        />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={FIELD} />
+        <input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Short description (optional)"
+          className={FIELD}
+        />
+        <div className="flex items-center gap-4">
+          <select value={engine} onChange={(e) => setEngine(e.target.value as Engine)} className={`${FIELD} w-auto`}>
+            <option value="codex">codex</option>
+            <option value="claude">claude</option>
+          </select>
+          <label className="flex items-center gap-1.5 text-[12px] text-zinc-300">
+            <input type="checkbox" checked={opensPr} onChange={(e) => setOpensPr(e.target.checked)} />
+            opens a PR
+          </label>
+        </div>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={12}
+          placeholder="The full prompt the agent runs (what it should do, what to file/open, how to finish)…"
+          className={`${FIELD} resize-y font-mono leading-relaxed`}
+        />
+        {err && <p className="text-[11px] text-[var(--gt-red)]">{err}</p>}
+        <button
+          onClick={save}
+          disabled={busy || !id.trim() || !title.trim() || !prompt.trim()}
+          className="self-start rounded-lg bg-[var(--gt-accent)] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
+        >
+          {busy ? 'Saving…' : 'Save agent'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [runs, setRuns] = useState<AgentRun[]>([])
@@ -63,8 +182,17 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   const [schedEngine, setSchedEngine] = useState<Record<string, Engine>>({})
   const engOf = (id: string): Engine => schedEngine[id] || 'codex'
   const [picking, setPicking] = useState<{ id: string; title: string } | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const [editing, setEditing] = useState<Agent | 'new' | null>(null)
   const logRef = useRef<HTMLPreElement>(null)
 
+  const reloadAgents = () => window.gt.agents.list().then(setAgents)
+  const toggleExpand = (id: string) =>
+    setExpanded((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
   const refreshSchedules = () => window.gt.schedules.list().then(setSchedules)
 
   useEffect(() => {
@@ -146,6 +274,16 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
       <div className="flex min-h-0 flex-1">
         <div className="flex w-[44%] min-w-[340px] flex-col border-r border-[var(--gt-border)]">
           <div className="shrink-0 space-y-2 overflow-y-auto p-3" style={{ maxHeight: '58%' }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-600">Agents</span>
+              <button
+                onClick={() => setEditing('new')}
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-0.5 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+              >
+                <Plus size={12} strokeWidth={2.5} />
+                New agent
+              </button>
+            </div>
             {agents === null ? (
               <div className="p-3 text-[12px] text-zinc-600">Loading…</div>
             ) : (
@@ -161,7 +299,10 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                     <div className="flex items-start gap-2.5">
                       <Icon size={16} strokeWidth={2} className="mt-0.5 shrink-0 text-[var(--gt-accent-light)]" />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-semibold text-zinc-100">{a.title}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13px] font-semibold text-zinc-100">{a.title}</span>
+                          {a.source && <Badge tone={SOURCE[a.source].tone}>{SOURCE[a.source].label}</Badge>}
+                        </div>
                         {a.description && (
                           <div className="text-[11.5px] leading-snug text-zinc-500">{a.description}</div>
                         )}
@@ -213,6 +354,49 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                       </div>
                       {sched?.lastRun && <span className="text-zinc-600">· last {reltime(sched.lastRun)} ago</span>}
                     </div>
+                    <div className="mt-2 flex items-center gap-3 text-[11px]">
+                      <button
+                        onClick={() => toggleExpand(a.id)}
+                        className="inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-300"
+                      >
+                        {expanded.has(a.id) ? (
+                          <ChevronDown size={12} strokeWidth={2} />
+                        ) : (
+                          <ChevronRight size={12} strokeWidth={2} />
+                        )}
+                        prompt
+                      </button>
+                      <button
+                        onClick={() => setEditing(a)}
+                        className="inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-300"
+                      >
+                        <Pencil size={11} strokeWidth={2} />
+                        edit
+                      </button>
+                      {a.source === 'override' && (
+                        <button
+                          onClick={async () => {
+                            await window.gt.agents.reset(a.id)
+                            reloadAgents()
+                          }}
+                          title="Revert to the built-in default"
+                          className="inline-flex items-center gap-1 text-zinc-500 hover:text-[var(--gt-yellow)]"
+                        >
+                          <RotateCcw size={11} strokeWidth={2} />
+                          reset
+                        </button>
+                      )}
+                    </div>
+                    {expanded.has(a.id) && (
+                      <div className="mt-2 space-y-1.5">
+                        <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-black/30 p-2 font-mono text-[10.5px] leading-relaxed text-zinc-400">
+                          {a.prompt}
+                        </pre>
+                        <div className="break-all font-mono text-[9.5px] text-zinc-600">
+                          runs as: {runsAs(a.engine || 'codex')}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })
@@ -307,6 +491,17 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
           onPick={(e, persona, pipeline) => {
             run(picking.id, e, persona, pipeline)
             setPicking(null)
+          }}
+        />
+      )}
+
+      {editing && (
+        <AgentEditor
+          agent={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            reloadAgents()
           }}
         />
       )}

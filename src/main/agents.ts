@@ -34,6 +34,9 @@ export type Agent = {
   prompt: string
   opensPr?: boolean
   engine?: Engine // default engine; overridable per run
+  // provenance (set by readAgents): a built-in default, a default overridden by
+  // this repo's .agents/agents.json, or a repo-only agent.
+  source?: 'default' | 'override' | 'repo'
 }
 
 export type AgentRunStatus = 'running' | 'done' | 'failed' | 'canceled' | 'interrupted'
@@ -148,12 +151,65 @@ function readRepoAgents(repoRoot: string): Agent[] {
   }
 }
 
-/** Built-in defaults, with the repo's .agents/agents.json overriding by id. */
+/** Built-in defaults, with the repo's .agents/agents.json overriding by id.
+ *  Each agent is annotated with its `source` so the UI can distinguish a stock
+ *  default, a default this repo has customized, and a repo-only agent. */
 export function readAgents(repoRoot: string): Agent[] {
+  const defaultIds = new Set(DEFAULT_AGENTS.map((a) => a.id))
+  const repo = readRepoAgents(repoRoot)
+  const repoIds = new Set(repo.map((a) => a.id))
   const byId = new Map<string, Agent>()
-  for (const a of DEFAULT_AGENTS) byId.set(a.id, a)
-  for (const a of readRepoAgents(repoRoot)) byId.set(a.id, a)
+  for (const a of DEFAULT_AGENTS)
+    byId.set(a.id, { ...a, source: repoIds.has(a.id) ? 'override' : 'default' })
+  for (const a of repo) byId.set(a.id, { ...a, source: defaultIds.has(a.id) ? 'override' : 'repo' })
   return [...byId.values()]
+}
+
+/** Upsert an agent into <repo>/.agents/agents.json (creates it). Overriding a
+ *  built-in default = writing an entry with the same id. */
+export function saveAgent(
+  repoRoot: string,
+  agent: Partial<Agent> & { id: string; title: string; prompt: string },
+): { ok: true } | { error: string } {
+  if (!repoRoot) return { error: 'not a git repo' }
+  const id = (agent.id || '').trim()
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return { error: 'id must be kebab-case (a-z, 0-9, -)' }
+  if (!agent.title?.trim()) return { error: 'title is required' }
+  if (!agent.prompt?.trim()) return { error: 'prompt is required' }
+  const entry: Agent = {
+    id,
+    title: agent.title.trim(),
+    prompt: agent.prompt.trim(),
+    description: agent.description?.trim() || undefined,
+    icon: agent.icon || undefined,
+    engine: agent.engine,
+    opensPr: agent.opensPr,
+  }
+  const dir = join(repoRoot, '.agents')
+  const f = join(dir, 'agents.json')
+  const list = readRepoAgents(repoRoot).filter((a) => a.id !== id)
+  list.push(entry)
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(f, JSON.stringify(list, null, 2) + '\n')
+    return { ok: true }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+}
+
+/** Remove an agent override from .agents/agents.json — a customized default
+ *  reverts to the built-in; a repo-only agent is deleted. */
+export function resetAgent(repoRoot: string, id: string): { ok: true } | { error: string } {
+  const f = join(repoRoot, '.agents', 'agents.json')
+  if (!existsSync(f)) return { ok: true }
+  try {
+    const list = readRepoAgents(repoRoot).filter((a) => a.id !== id)
+    writeFileSync(f, JSON.stringify(list, null, 2) + '\n')
+    return { ok: true }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 }
 
 // every git repo gets the default agents

@@ -156,6 +156,7 @@ export type Agent = {
   prompt: string
   opensPr?: boolean
   engine?: Engine
+  source?: 'default' | 'override' | 'repo'
 }
 export type Persona = { id: string; title: string; description: string; icon?: string; prompt: string }
 export type PipelineId = 'single' | 'review' | 'review-iterate'
@@ -353,6 +354,8 @@ export type GtApi = {
   typeIntoActive: (text: string) => void
   agents: {
     list: () => Promise<Agent[]>
+    save: (agent: Partial<Agent> & { id: string; title: string; prompt: string }) => Promise<{ ok: true } | { error: string }>
+    reset: (id: string) => Promise<{ ok: true } | { error: string }>
     personas: () => Promise<Persona[]>
     pipelines: () => Promise<PipelineInfo[]>
     run: (
