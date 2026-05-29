@@ -206,6 +206,19 @@ export type Schedule = {
   describe?: string
   nextRun?: number | null
 }
+export type HitlSource = 'manual' | 'cron-fail' | 'agent' | 'factory' | 'skill'
+export type HitlItem = {
+  id: string
+  title: string
+  detail?: string
+  action?: string
+  repo?: string
+  repoRoot?: string
+  source: HitlSource
+  status: 'open' | 'resolved'
+  createdAt: number
+  resolvedAt?: number
+}
 export type CronRun = {
   id: string
   scheduleId: string
@@ -429,6 +442,12 @@ export type GtApi = {
     runLog: (runId: string) => Promise<string>
     reconcile: () => Promise<{ loaded: number; removed: number }>
     removeAll: () => Promise<{ removed: number }>
+  }
+  hitl: {
+    list: () => Promise<HitlItem[]>
+    file: (item: Omit<HitlItem, 'id' | 'status' | 'createdAt'>) => Promise<HitlItem>
+    resolve: (id: string, resolved?: boolean) => Promise<boolean>
+    remove: (id: string) => Promise<boolean>
   }
   activity: {
     list: () => Promise<ActivityEvent[]>

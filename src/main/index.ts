@@ -84,6 +84,7 @@ import {
   runScheduleNow,
 } from './launchd'
 import { readCronRuns, readCronRunLog } from './cron-runs'
+import { readHitl, fileHitl, resolveHitl, removeHitl, type HitlItem } from './hitl'
 import { describeSpec, nextRun, type ScheduleSpec } from './cron'
 import { readPersonas } from './personas'
 
@@ -519,6 +520,11 @@ ipcMain.handle('schedules:run-now', (_e, id: string) => {
 ipcMain.handle('schedules:runs', (_e, id?: string) => readCronRuns(id))
 ipcMain.handle('schedules:run-log', (_e, runId: string) => readCronRunLog(runId))
 ipcMain.handle('schedules:reconcile', () => reconcileSchedules())
+// Global HITL inbox (cross-repo). Filing fires a blocked notification (TG + macOS).
+ipcMain.handle('hitl:list', () => readHitl())
+ipcMain.handle('hitl:file', (_e, item: Omit<HitlItem, 'id' | 'status' | 'createdAt'>) => fileHitl(item))
+ipcMain.handle('hitl:resolve', (_e, id: string, resolved?: boolean) => resolveHitl(id, resolved ?? true))
+ipcMain.handle('hitl:remove', (_e, id: string) => removeHitl(id))
 ipcMain.handle('schedules:remove-all', () => {
   const n = removeAllJobs()
   for (const s of readSchedules()) removeSchedule(s.id)

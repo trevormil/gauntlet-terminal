@@ -141,7 +141,13 @@ export function SessionView({
         <Icon size={13} strokeWidth={2} />
         {label}
         {count ? (
-          <span className="ml-0.5 rounded-full bg-[var(--gt-yellow)]/20 px-1.5 text-[9px] font-bold tabular-nums text-[var(--gt-yellow)]">
+          <span
+            className={`ml-0.5 rounded-full px-1.5 text-[9px] font-bold tabular-nums ${
+              id === 'hitl'
+                ? 'bg-[var(--gt-red)]/25 text-[var(--gt-red)]'
+                : 'bg-[var(--gt-yellow)]/20 text-[var(--gt-yellow)]'
+            }`}
+          >
             {count}
           </span>
         ) : null}

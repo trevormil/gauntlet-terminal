@@ -116,6 +116,31 @@ export function onActivity(fn: (ev: ActivityEvent) => void) {
   broadcast = fn
 }
 
+// macOS + Telegram notification for one event.
+function fireNotification(ev: ActivityEvent): void {
+  if (Notification.isSupported()) {
+    try {
+      new Notification({ title: ev.title, body: ev.detail || '' }).show()
+    } catch {
+      /* notifications unavailable */
+    }
+  }
+  sendTelegram(ev)
+}
+
+// Ids the app emitted in-process (and already notified for) — so the file tail
+// doesn't double-notify them. Bounded; old ids age out.
+const emittedIds = new Set<string>()
+function rememberEmitted(id: string): void {
+  emittedIds.add(id)
+  if (emittedIds.size > 1000) {
+    for (const id of emittedIds) {
+      emittedIds.delete(id)
+      if (emittedIds.size <= 800) break
+    }
+  }
+}
+
 export function emitActivity(
   e: Omit<ActivityEvent, 'id' | 'ts'>,
   opts?: { notify?: boolean },
@@ -127,20 +152,12 @@ export function emitActivity(
   } catch {
     /* best effort */
   }
-  const notify = opts?.notify ?? NOTIFY[ev.kind]
-  if (notify) {
-    if (Notification.isSupported()) {
-      try {
-        new Notification({ title: ev.title, body: ev.detail || '' }).show()
-      } catch {
-        /* notifications unavailable */
-      }
-    }
-    sendTelegram(ev) // mirror to Telegram if the bridge is set up
-  }
+  rememberEmitted(ev.id)
+  if (opts?.notify ?? NOTIFY[ev.kind]) fireNotification(ev)
   // NOTE: don't broadcast here — the file tail (below) picks up this append and
   // broadcasts it, so terminal-written and skill-written events flow through one
-  // path (no double feed entries). The notification above is the instant signal.
+  // path (no double feed entries). The tail also NOTIFIES external (skill/cron)
+  // events — deduped against emittedIds so app emits don't ping twice.
   return ev
 }
 
@@ -186,7 +203,12 @@ function drainTail() {
     for (const line of buf.toString('utf8').split('\n')) {
       if (!line.trim()) continue
       try {
-        broadcast(JSON.parse(line) as ActivityEvent)
+        const ev = JSON.parse(line) as ActivityEvent
+        broadcast(ev)
+        // Notify for EXTERNAL high-signal events (skills, cron, gt-notify) that the
+        // app didn't emit in-process — so skill-raised HITL/blocked/errors actually
+        // ping. Deduped against emittedIds so app emits don't double-notify.
+        if (!emittedIds.has(ev.id) && NOTIFY[ev.kind]) fireNotification(ev)
       } catch {
         /* partial/garbled line — skip */
       }
