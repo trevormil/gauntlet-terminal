@@ -403,12 +403,23 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
       setOutputs((o) => (o[run.id] === undefined ? { ...o, [run.id]: run.output } : o))
       setSel((s) => s ?? run.id)
       // When a designer run finishes, reload the agents list so the newly-
-      // saved entry shows up without a manual refresh.
+      // saved entry shows up without a manual refresh — then auto-expand
+      // the new agent and load its script so the bash body is immediately
+      // visible (closes the loop on the "describe it → see the script" flow).
       if (
         (run.agentId === 'design-repo' || run.agentId === 'design-global') &&
         run.status === 'done'
       ) {
-        reloadAgents()
+        const priorIds = new Set((agents || []).map((a) => a.id))
+        window.gt.agents.list().then((next) => {
+          setAgents(next)
+          const fresh = next.find((a) => !priorIds.has(a.id))
+          if (!fresh) return
+          setExpanded((s) => new Set([...s, fresh.id]))
+          window.gt.agents
+            .script(fresh.id)
+            .then((r) => setScripts((m) => ({ ...m, [fresh.id]: r })))
+        })
       }
     })
     const offOutput = window.gt.agents.onOutput(({ runId, chunk }) => {
