@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { statSync, existsSync, readdirSync } from 'node:fs'
+import { spawn as cpSpawn } from 'node:child_process'
 import * as pty from 'node-pty'
 
 // The main bundle is ESM (package.json "type": "module"), so __dirname doesn't
@@ -278,7 +279,7 @@ function createWindow() {
     trafficLightPosition: { x: 14, y: 11 },
     title: 'TerMinal',
     icon: join(moduleDir, '../../build/icon.png'),
-    webPreferences: { preload: join(moduleDir, '../preload/index.mjs'), sandbox: false },
+    webPreferences: { preload: join(moduleDir, '../preload/index.mjs'), sandbox: false, webviewTag: true },
   })
 
   // The macOS traffic lights are hidden in fullscreen, so the renderer should
@@ -617,6 +618,19 @@ ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(cur().cwd),
 ipcMain.handle('mrs:ci', (_e, iid: number) => getMrCi(repoRootOf(cur().cwd), iid))
 ipcMain.handle('mrs:merge', (_e, iid: number) => mergeMr(repoRootOf(cur().cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
+// Hand a URL to the real Brave (full extensions/wallet). Falls back to the
+// default browser if Brave isn't installed.
+ipcMain.handle('open:in-brave', (_e, url: string) => {
+  try {
+    const p = cpSpawn('open', ['-a', 'Brave Browser', url], { stdio: 'ignore' })
+    p.on('error', () => shell.openExternal(url))
+    p.on('exit', (code) => {
+      if (code !== 0) shell.openExternal(url)
+    })
+  } catch {
+    shell.openExternal(url)
+  }
+})
 ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
 ipcMain.handle('clipboard:read', () => clipboard.readText())
 

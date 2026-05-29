@@ -464,6 +464,7 @@ export type GtApi = {
   getMrCi: (iid: number) => Promise<CiInfo | null>
   mergeMr: (iid: number) => Promise<{ ok: boolean; error?: string }>
   openExternal: (url: string) => Promise<void>
+  openInBrave: (url: string) => Promise<void>
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
   notes: {
