@@ -53,7 +53,7 @@ export function defaultSettings(): Settings {
     projectsDir: '',
     worktreesDir: '',
     engines: { codex: { path: '' }, claude: { path: '' } },
-    defaultEngine: 'codex',
+    defaultEngine: 'claude', // claude is the required engine; codex is optional
     forge: 'auto',
     telegram: { notify: false, control: false, botToken: '', chatId: '' },
     apps: { editor: '', browser: '' },

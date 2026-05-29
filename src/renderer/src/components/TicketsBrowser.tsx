@@ -172,7 +172,10 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
   const [mrByIid, setMrByIid] = useState<Map<number, Mr>>(() => new Map())
   const [viewMrIid, setViewMrIid] = useState<number | null>(null)
   const [spawnText, setSpawnText] = useState('')
-  const [spawnEngine, setSpawnEngine] = useState<Engine>('codex')
+  const [spawnEngine, setSpawnEngine] = useState<Engine>('claude')
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setSpawnEngine(s.defaultEngine))
+  }, [])
   const [spawning, setSpawning] = useState(false)
   const [spawnMsg, setSpawnMsg] = useState('')
 

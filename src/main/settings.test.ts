@@ -53,7 +53,7 @@ describe('migrate', () => {
 
   test('invalid enum values fall back to defaults', () => {
     const s = migrate({ defaultEngine: 'gpt', forge: 'bitbucket' })
-    expect(s.defaultEngine).toBe('codex')
+    expect(s.defaultEngine).toBe('claude') // claude is the required engine; codex is optional
     expect(s.forge).toBe('auto')
   })
 

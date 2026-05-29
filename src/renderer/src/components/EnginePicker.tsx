@@ -57,7 +57,7 @@ export function EnginePicker({
   const [personas, setPersonas] = useState<Persona[]>([])
   const [pipelines, setPipelines] = useState<PipelineInfo[]>([])
   const [env, setEnv] = useState<EnvDetect | null>(null)
-  const [defaultEngine, setDefaultEngine] = useState<Engine>('codex')
+  const [defaultEngine, setDefaultEngine] = useState<Engine>('claude')
   useEffect(() => {
     window.gt.agents.personas().then(setPersonas)
     window.gt.agents.pipelines().then(setPipelines)

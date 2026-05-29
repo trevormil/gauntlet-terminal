@@ -42,11 +42,14 @@ function FactoryTab({ ctx }: { ctx: TabContext }) {
   const [health, setHealth] = useState<FactoryHealth | null>(null)
   const [run, setRun] = useState<AgentRun | null>(null)
   const [log, setLog] = useState('')
-  const [engine, setEngine] = useState<Engine>('codex')
+  const [engine, setEngine] = useState<Engine>('claude')
   const [starting, setStarting] = useState(false)
   const runIdRef = useRef<string>('')
   const logRef = useRef<HTMLPreElement>(null)
 
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setEngine(s.defaultEngine))
+  }, [])
   const loadHealth = () => window.gt.factory.health().then(setHealth)
   const setActive = (r: AgentRun | null) => {
     setRun(r)

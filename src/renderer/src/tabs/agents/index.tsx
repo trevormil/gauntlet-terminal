@@ -86,7 +86,7 @@ function AgentEditor({
   const [id, setId] = useState(a?.id || '')
   const [title, setTitle] = useState(a?.title || '')
   const [description, setDescription] = useState(a?.description || '')
-  const [engine, setEngine] = useState<Engine>(a?.engine || 'codex')
+  const [engine, setEngine] = useState<Engine>(a?.engine || 'claude')
   const [opensPr, setOpensPr] = useState(!!a?.opensPr)
   const [prompt, setPrompt] = useState(a?.prompt || '')
   const [busy, setBusy] = useState(false)

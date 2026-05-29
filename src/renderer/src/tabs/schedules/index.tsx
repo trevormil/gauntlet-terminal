@@ -48,7 +48,10 @@ function ScheduleForm({
   onSave: (agentId: string, engine: Engine, spec: ScheduleSpec) => Promise<void>
 }) {
   const [agentId, setAgentId] = useState(agents[0]?.id || '')
-  const [engine, setEngine] = useState<Engine>('codex')
+  const [engine, setEngine] = useState<Engine>('claude')
+  useEffect(() => {
+    window.gt.settings.get().then((s) => setEngine(s.defaultEngine))
+  }, [])
   const [kind, setKind] = useState<'interval' | 'calendar' | 'cron'>('calendar')
   const [everyN, setEveryN] = useState(1)
   const [unit, setUnit] = useState<'minutes' | 'hours'>('hours')
