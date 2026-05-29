@@ -120,6 +120,17 @@ export type NewTicket = { title: string; type: string; priority: string; status:
 
 export type Snippet = { id: string; title: string; body: string }
 
+export type DocCategory = 'changelog' | 'maintainer' | 'developer' | 'personal' | 'other'
+export type DocEntry = {
+  path: string
+  title: string
+  category: DocCategory
+  managedBy?: string
+}
+export type DocsTree = {
+  categories: { id: DocCategory; label: string; items: DocEntry[] }[]
+}
+
 export type Engine = 'codex' | 'claude'
 export type EngineCfg = { path: string }
 export type ForgePref = 'auto' | 'github' | 'gitlab'
@@ -517,6 +528,10 @@ export type GtApi = {
     create: (input: NewTicket) => Promise<Ticket>
     update: (slug: string, patch: { status?: string; priority?: string }) => Promise<boolean>
     spawn: (text: string, engine: Engine) => Promise<AgentRun | { error: string }>
+  }
+  docs: {
+    list: () => Promise<DocsTree>
+    get: (relPath: string) => Promise<string>
   }
   projectSessions: () => Promise<ProjectSession[]>
   getProjectSession: (slug: string) => Promise<ProjectSession | null>

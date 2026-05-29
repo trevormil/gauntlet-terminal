@@ -151,6 +151,10 @@ const gt = {
       ipcRenderer.invoke('tickets:update', slug, patch),
     spawn: (text: string, engine: string) => ipcRenderer.invoke('tickets:spawn', text, engine),
   },
+  docs: {
+    list: () => ipcRenderer.invoke('docs:list'),
+    get: (relPath: string) => ipcRenderer.invoke('docs:get', relPath),
+  },
   projectSessions: () => ipcRenderer.invoke('sessions:project-list'),
   getProjectSession: (slug: string) => ipcRenderer.invoke('sessions:project-get', slug),
   listSkills: () => ipcRenderer.invoke('skills:list'),

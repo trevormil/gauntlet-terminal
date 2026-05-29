@@ -30,6 +30,7 @@ import { forgeFor } from './forge'
 import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
+import { listDocs, readDoc } from './docs'
 import { scaffoldProject } from './scaffold'
 import { readSnippets, writeSnippets, type Snippet } from './snippets'
 import {
@@ -583,6 +584,8 @@ ipcMain.handle('tab:context', () => {
     hasAgents: repoHasAgents(repoRoot),
   }
 })
+ipcMain.handle('docs:list', () => listDocs(repoRootOf(cur().cwd) || ''))
+ipcMain.handle('docs:get', (_e, relPath: string) => readDoc(repoRootOf(cur().cwd) || '', relPath))
 ipcMain.handle('sessions:project-list', () => listProjectSessions(repoRootOf(cur().cwd)))
 ipcMain.handle('sessions:project-get', (_e, slug: string) =>
   getProjectSession(repoRootOf(cur().cwd), slug),
