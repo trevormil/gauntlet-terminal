@@ -24,6 +24,7 @@ import { Badge } from '../../components/ui'
 import { EnginePicker } from '../../components/EnginePicker'
 import { EngineLogo } from '../../components/EngineLogo'
 import { EngineModelPicker } from '../../components/EngineModelPicker'
+import { BashHighlight } from '../../components/BashHighlight'
 import type { BadgeTone } from '../../components/ui'
 import type { Tab, TabContext, Agent, AgentRun, Engine } from '../../lib/types'
 
@@ -594,9 +595,7 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                                 edit
                               </button>
                             </div>
-                            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-[#0c0c11] p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
-                              {scripts[a.id]!.body}
-                            </pre>
+                            <BashHighlight code={scripts[a.id]!.body} className="max-h-72" />
                           </>
                         ) : (
                           <>

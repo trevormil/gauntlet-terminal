@@ -13,6 +13,7 @@ import {
 import { Badge } from '../../components/ui'
 import { EngineLogo } from '../../components/EngineLogo'
 import { EngineModelPicker } from '../../components/EngineModelPicker'
+import { BashHighlight } from '../../components/BashHighlight'
 import type { BadgeTone } from '../../components/ui'
 import type { Tab, TabContext, Agent, Schedule, ScheduleSpec, CronRun, Engine } from '../../lib/types'
 
@@ -628,9 +629,7 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                         )}
                       </div>
                       {scriptByAgent[s.agentId] && (
-                        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--gt-border)] bg-[#0c0c11] p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
-                          {scriptByAgent[s.agentId]!.body}
-                        </pre>
+                        <BashHighlight code={scriptByAgent[s.agentId]!.body} className="max-h-56" />
                       )}
                     </div>
                   )}
