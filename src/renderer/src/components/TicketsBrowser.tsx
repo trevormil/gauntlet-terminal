@@ -16,6 +16,20 @@ function prIidFromUrl(url: string): number | null {
   return m ? Number(m[1]) : null
 }
 
+// Subtle text color (no badge chrome) for a BadgeTone — used by the ticket MR
+// rows so the state/verdict/tests read as quiet inline text, not loud chips.
+const TONE_TEXT: Record<BadgeTone, string> = {
+  ok: 'text-[var(--gt-green)]',
+  green: 'text-[var(--gt-green)]',
+  warn: 'text-[var(--gt-yellow)]',
+  yellow: 'text-[var(--gt-yellow)]',
+  bad: 'text-[var(--gt-red)]',
+  red: 'text-[var(--gt-red)]',
+  blue: 'text-[var(--gt-blue)]',
+  accent: 'text-[var(--gt-accent-light)]',
+  mute: 'text-zinc-500',
+}
+
 const STATUSES = ['open', 'in-progress', 'closed', 'stuck', 'icebox']
 const TYPES = ['feature', 'bug', 'security', 'docs', 'dx', 'testing', 'ux', 'performance']
 const PRIORITIES = ['critical', 'high', 'medium', 'low']
@@ -372,7 +386,7 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                 {selected.updated && <span>updated {selected.updated}</span>}
               </div>
               {selected.prs.length > 0 && (
-                <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="mb-3 flex flex-col items-start gap-1">
                   {selected.prs.map((p) => {
                     const iid = prIidFromUrl(p)
                     if (iid == null)
@@ -380,7 +394,7 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                         <button
                           key={p}
                           onClick={() => window.gt.openExternal(p)}
-                          className="inline-flex items-center gap-0.5 text-[11px] text-[var(--gt-accent-2)] hover:underline"
+                          className="inline-flex items-center gap-0.5 text-[11px] text-zinc-500 hover:text-[var(--gt-accent-2)] hover:underline"
                         >
                           {p.replace(/^https?:\/\/[^/]+\//, '')}
                           <ArrowUpRight size={11} strokeWidth={2} />
@@ -392,16 +406,28 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
                         key={p}
                         onClick={() => setViewMrIid(iid)}
                         title={`View ${ctx.forgeLabel} ${ctx.forgeSym}${iid} in-app`}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] px-2 py-1 text-[11px] hover:border-[var(--gt-accent)]/50 hover:bg-white/5"
+                        className="group flex w-fit flex-col items-start gap-0.5 rounded-md px-1.5 py-0.5 text-left hover:bg-white/5"
                       >
-                        <GitPullRequest size={12} strokeWidth={2} className="text-zinc-500" />
-                        <span className="font-mono text-zinc-300">
-                          {ctx.forgeSym}
-                          {iid}
+                        <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                          <GitPullRequest size={11} strokeWidth={2} className="text-zinc-600" />
+                          <span className="text-zinc-300 group-hover:text-[var(--gt-accent-light)]">
+                            {ctx.forgeSym}
+                            {ctx.forgeLabel}
+                            {iid}
+                          </span>
+                          {mr && (
+                            <span className={`uppercase ${TONE_TEXT[stateTone(mr.state)]}`}>— {mr.state}</span>
+                          )}
                         </span>
-                        {mr && <Badge tone={stateTone(mr.state)}>{mr.state}</Badge>}
-                        {mr?.review && <Badge tone={verdictTone(mr.review.verdict)}>{mr.review.verdict}</Badge>}
-                        {mr?.review && <Badge tone={testTone(mr.review.testStatus)}>tests {mr.review.testStatus}</Badge>}
+                        {mr?.review && (
+                          <span className="flex items-center gap-1.5 pl-[18px] text-[10px] text-zinc-600">
+                            <span className={TONE_TEXT[verdictTone(mr.review.verdict)]}>{mr.review.verdict}</span>
+                            <span className="text-zinc-700">·</span>
+                            <span className={TONE_TEXT[testTone(mr.review.testStatus)]}>
+                              tests {mr.review.testStatus}
+                            </span>
+                          </span>
+                        )}
                       </button>
                     )
                   })}
