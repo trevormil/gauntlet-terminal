@@ -705,6 +705,16 @@ ipcMain.handle('open:config-dir', () => shell.openPath(join(homedir(), '.config'
 // "Bootstrapped" === the project-template machinery is present in the repo
 // (we check .agents/ as a low-effort proxy — the other dirs come together
 // with it). Used by the in-session banner.
+// First-user-prompt for an arbitrary session id (not just the active one).
+// Used by the auto-naming flow in App.tsx — labels brand-new sessions with a
+// truncated version of what the user actually asked Claude to do, instead of
+// the bare "S1"/"S2" ordinal. The firstUserText is already extracted +
+// capped to 140 chars by parseTranscriptFile.
+ipcMain.handle('data:first-prompt', (_e, sessionId: string) => {
+  if (!sessionId) return ''
+  return readTranscriptStats(sessionId).firstUserText || ''
+})
+
 ipcMain.handle('workspace:is-bootstrapped', (_e, repoRoot: string) => {
   if (!repoRoot) return { bootstrapped: true }
   return { bootstrapped: existsSync(join(repoRoot, '.agents')) }

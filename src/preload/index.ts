@@ -144,6 +144,7 @@ const gt = {
 
   // data sources for plugins (all keyed to the attached session)
   transcript: () => ipcRenderer.invoke('data:transcript'),
+  firstPrompt: (sessionId: string) => ipcRenderer.invoke('data:first-prompt', sessionId),
   harnessTdd: () => ipcRenderer.invoke('data:harness-tdd'),
   usage: () => ipcRenderer.invoke('data:usage'),
   gitStatus: () => ipcRenderer.invoke('data:git-status'),

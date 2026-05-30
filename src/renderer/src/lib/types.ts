@@ -568,6 +568,7 @@ export type GtApi = {
     onExit: (cb: (key: string, code: number) => void) => () => void
   }
   transcript: () => Promise<TranscriptStats>
+  firstPrompt: (sessionId: string) => Promise<string>
   harnessTdd: () => Promise<TddInfo>
   usage: () => Promise<Usage>
   gitStatus: () => Promise<GitStatus>

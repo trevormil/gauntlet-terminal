@@ -22,8 +22,29 @@ const repoLabelOf = (cwd: string) => cwd.replace(/\/$/, '').split('/').pop() || 
 // terminals") instead of the old session-first flat list.
 type Workspace = { repoRoot: string; label: string; sessions: Sess[] }
 
-const labelForSession = (s: Sess, indexInWorkspace: number) => {
+// Trim a transcript's first user message into a session-tab-friendly label.
+// 24 chars fits comfortably in the in-Terminal session sub-bar. We drop
+// leading skill-style triggers ("/something …") so the label reads as the
+// task intent, not the command surface.
+const labelFromPrompt = (raw: string): string => {
+  let s = raw.replace(/\s+/g, ' ').trim()
+  if (s.startsWith('/')) {
+    const space = s.indexOf(' ')
+    if (space > 0) s = s.slice(space + 1).trim()
+  }
+  if (!s) return ''
+  if (s.length <= 24) return s
+  return s.slice(0, 23).trimEnd() + '…'
+}
+
+const labelForSession = (
+  s: Sess,
+  indexInWorkspace: number,
+  autoNamesByKey: Map<string, string>,
+) => {
   if (s.choice.name) return s.choice.name
+  const auto = autoNamesByKey.get(s.key)
+  if (auto) return auto
   if (s.choice.mode === 'resume' && s.choice.sessionId) return s.choice.sessionId.slice(0, 6)
   // Default is the session's ordinal within the workspace — short and stable
   // (1, 2, 3 within "Repo-A"). Index is computed at render time.
@@ -134,6 +155,59 @@ export default function App() {
       s.map((x) => (x.key === key ? { ...x, choice: { ...x.choice, name } } : x)),
     )
 
+  // Auto-naming: for any session WITHOUT an explicit user-set name, poll the
+  // first user prompt and use a truncated version as the auto-label. Polls
+  // every 4s until we have one (transcripts grow during the session). Once
+  // landed, we stop polling for that session — the user can either keep the
+  // auto-name or override with double-click rename.
+  const [autoNamesByKey, setAutoNamesByKey] = useState<Map<string, string>>(() => new Map())
+  useEffect(() => {
+    const sessionsToPoll = sessions.filter(
+      (s) => !s.choice.name && (s.info.sessionId || s.choice.sessionId) && !autoNamesByKey.has(s.key),
+    )
+    if (sessionsToPoll.length === 0) return
+    let cancelled = false
+    const poll = async () => {
+      for (const s of sessionsToPoll) {
+        const sid = s.info.sessionId || s.choice.sessionId
+        if (!sid) continue
+        try {
+          const first = await window.gt.firstPrompt(sid)
+          const label = labelFromPrompt(first || '')
+          if (!cancelled && label) {
+            setAutoNamesByKey((prev) => {
+              if (prev.has(s.key)) return prev
+              const next = new Map(prev)
+              next.set(s.key, label)
+              return next
+            })
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    poll()
+    const id = setInterval(poll, 4000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [sessions, autoNamesByKey])
+
+  // Clear auto-name for a session when it's removed so the Map doesn't grow
+  // forever as sessions cycle through.
+  useEffect(() => {
+    const liveKeys = new Set(sessions.map((s) => s.key))
+    if ([...autoNamesByKey.keys()].some((k) => !liveKeys.has(k))) {
+      setAutoNamesByKey((prev) => {
+        const next = new Map<string, string>()
+        for (const [k, v] of prev) if (liveKeys.has(k)) next.set(k, v)
+        return next
+      })
+    }
+  }, [sessions, autoNamesByKey])
+
   // Group sessions by repo root so the top bar can render workspace pills.
   // We key on cwd verbatim — two sessions at the same path are siblings, two
   // at different paths are different workspaces even if the basenames collide.
@@ -161,14 +235,14 @@ export default function App() {
     for (const ws of workspaces) {
       const peers = ws.sessions.map((x, i) => ({
         key: x.key,
-        label: labelForSession(x, i),
+        label: labelForSession(x, i, autoNamesByKey),
         status: statusByKey[x.key] || 'idle',
         mode: x.choice.mode,
       }))
       for (const s of ws.sessions) m.set(s.key, peers)
     }
     return m
-  }, [workspaces, statusByKey])
+  }, [workspaces, statusByKey, autoNamesByKey])
 
   const closeWorkspace = (root: string) => {
     const ws = workspaces.find((w) => w.repoRoot === root)
