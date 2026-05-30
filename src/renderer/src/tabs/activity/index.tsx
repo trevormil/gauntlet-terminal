@@ -21,7 +21,28 @@ import {
 } from 'lucide-react'
 import { activityTone } from '../../lib/badges'
 import { badgeClasses } from '../../components/ui'
+import { navigateTo } from '../../lib/nav'
 import type { Tab, TabContext, ActivityEvent, ActivityKind } from '../../lib/types'
+
+// Decide where clicking an activity row should take you. Priority:
+//   runId  → Runs tab + pre-select that run
+//   ref.pr → MRs tab (no payload — the tab opens to its own selection)
+//   ref.ticket present + kind starts with 'ticket' → Tickets tab
+async function navForEvent(ev: ActivityEvent): Promise<void> {
+  if (ev.runId) return navigateTo('runs', { runId: ev.runId })
+  if (ev.ref?.pr) return navigateTo('mrs', { iid: ev.ref.pr })
+  if (ev.ref?.ticket) {
+    // Look up the slug by ticket id — tickets:list is cheap (single file read).
+    try {
+      const tickets = await window.gt.tickets.list()
+      const match = tickets.find((t) => Number(t.id) === ev.ref!.ticket)
+      if (match) return navigateTo('tickets', { slug: match.slug })
+    } catch {
+      /* fall through */
+    }
+    return navigateTo('tickets')
+  }
+}
 
 const ICON: Record<ActivityKind, LucideIcon> = {
   'session-start': Cpu,
@@ -232,12 +253,24 @@ function ActivityTab({ ctx }: { ctx: TabContext }) {
                 const Icon = ICON[e.kind] || Info
                 const tone = activityTone(e.kind)
                 const isNew = e.id === newest.current
+                const hasNav = !!(e.runId || e.ref?.pr || e.ref?.ticket)
                 return (
                   <div
                     key={e.id}
+                    onClick={hasNav ? () => navForEvent(e) : undefined}
+                    role={hasNav ? 'button' : undefined}
+                    title={
+                      hasNav
+                        ? e.runId
+                          ? 'Jump to this run'
+                          : e.ref?.pr
+                            ? 'Open this PR/MR'
+                            : 'Open this ticket'
+                        : undefined
+                    }
                     className={`group relative flex gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03] ${
                       isNew ? 'gt-pop-in' : ''
-                    }`}
+                    } ${hasNav ? 'cursor-pointer' : ''}`}
                   >
                     {/* timeline rail: a continuous line with the kind node sitting on it */}
                     <div className="relative flex w-5 shrink-0 justify-center">

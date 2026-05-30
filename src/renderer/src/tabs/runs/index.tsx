@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ListChecks, RefreshCw, FolderOpen, X, Search, Play } from 'lucide-react'
+import { ListChecks, RefreshCw, FolderOpen, X, Search, Play, StopCircle, Trash2 } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import type { BadgeTone } from '../../components/ui'
 import { EngineLogo } from '../../components/EngineLogo'
@@ -343,6 +343,43 @@ function RunsTab({ ctx: _ctx }: { ctx: TabContext }) {
                   Worktree
                 </button>
               )}
+              {/* Cancel: only works for in-process runs (cron runs spawn from
+                  launchd in a different process tree; agents.cancel can't
+                  reach them). Showing the button conditionally avoids the
+                  "why does this do nothing" UX trap. */}
+              {selectedRun.status === 'running' && selectedRun.source === 'agent' && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Cancel this run? The agent will be SIGTERM-ed.')) return
+                    await window.gt.agents.cancel(selectedRun.id)
+                    await reload()
+                  }}
+                  title="SIGTERM this in-process run"
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-red)]/40 bg-[var(--gt-red)]/10 px-1.5 py-0.5 text-[10.5px] text-[var(--gt-red)] hover:border-[var(--gt-red)]/60"
+                >
+                  <StopCircle size={10} strokeWidth={2} />
+                  Cancel
+                </button>
+              )}
+              {/* Remove worktree: post-run cleanup for in-process runs. Cron
+                  worktrees live in ~/.config/TerMinal/cron-worktrees/ and are
+                  managed by the runner. */}
+              {selectedRun.source === 'agent' &&
+                selectedRun.status !== 'running' &&
+                selectedRun.worktree && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Remove this run\'s worktree? Uncommitted changes will be lost.')) return
+                      await window.gt.agents.removeWorktree(selectedRun.id)
+                      await reload()
+                    }}
+                    title="git worktree remove (and rm -rf the directory)"
+                    className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-1.5 py-0.5 text-[10.5px] text-zinc-400 hover:border-[var(--gt-red)]/60 hover:text-[var(--gt-red)]"
+                  >
+                    <Trash2 size={10} strokeWidth={2} />
+                    Remove worktree
+                  </button>
+                )}
               <button
                 onClick={() => handleRerun(selectedRun)}
                 disabled={rerunBusy || selectedRun.status === 'running'}

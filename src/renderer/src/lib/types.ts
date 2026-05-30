@@ -57,6 +57,8 @@ export type ActivityEvent = {
   repoRoot?: string
   sessionId?: string
   ref?: { ticket?: number; pr?: number }
+  runId?: string
+  runSource?: 'cron' | 'agent'
 }
 
 export type UsageWindow = { pct: number; resetsAt: number | null } | null

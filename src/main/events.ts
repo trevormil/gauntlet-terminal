@@ -91,6 +91,10 @@ export type ActivityEvent = {
   // join keys for cycle-time linkage: connect a ticket's events across its life
   // (ticket-filed → pr-opened{ticket,pr} → pr-verdict{pr} → pr-merged{pr}).
   ref?: { ticket?: number; pr?: number }
+  // Pointer back to the originating cron / in-process run, so clicking the
+  // event in the Activity tab can jump to that run's log in the Runs tab.
+  runId?: string
+  runSource?: 'cron' | 'agent'
 }
 
 // which kinds raise a macOS/Telegram notification (vs. log-only feed context).

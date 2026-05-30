@@ -70,7 +70,10 @@ function emitActivity(kind, title, detail) {
     detail: detail || '',
     repo: repoLabel,
     repoRoot: repo,
-    runId,
+    // runId is auto-attached so the Activity tab can click-jump to the run
+    // that emitted the event. runSource is 'cron' because terminal-cli is the
+    // helper scripts use, which only run inside cron-fired bash bodies.
+    ...(runId ? { runId, runSource: 'cron' } : {}),
   }
   appendFileSync(ACTIVITY, JSON.stringify(ev) + '\n')
 }

@@ -410,6 +410,30 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
     if (selAgentId) loadScript(selAgentId)
   }, [selAgentId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cross-source last-run status per agent. We already have in-process runs
+  // in `runs`; for cron runs, fetch via the unified endpoint so the left rail
+  // also covers schedule-fired runs. Refresh on activity:event so a freshly
+  // finished cron run updates the status dot immediately.
+  const [allRuns, setAllRuns] = useState<{ agentId: string; status: string; startedAt: number }[]>([])
+  useEffect(() => {
+    const load = () => window.gt.agents.allRuns().then(setAllRuns)
+    load()
+    const off = window.gt.activity.onEvent(load)
+    const t = setInterval(load, 30_000)
+    return () => {
+      off()
+      clearInterval(t)
+    }
+  }, [])
+  const lastRunByAgent = useMemo(() => {
+    const m = new Map<string, { status: string; startedAt: number }>()
+    // allRuns is already startedAt-desc; first hit per agent wins.
+    for (const r of allRuns) {
+      if (!m.has(r.agentId)) m.set(r.agentId, { status: r.status, startedAt: r.startedAt })
+    }
+    return m
+  }, [allRuns])
+
   // Per-(repo, agent) state sidecar. Surfaced in the right pane so the
   // operator can see "last scanned X ago" without `cat`-ing the JSON.
   // Re-fetched on select + after a successful run completes (the agent
@@ -624,11 +648,28 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                           <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-zinc-100">
                             {a.title}
                           </span>
-                          {busy && (
+                          {busy ? (
                             <span
                               className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gt-green)] gt-pulse"
                               title="run in progress"
                             />
+                          ) : (
+                            (() => {
+                              const last = lastRunByAgent.get(a.id)
+                              if (!last) return null
+                              const dot =
+                                last.status === 'done'
+                                  ? 'bg-[var(--gt-green)]'
+                                  : last.status === 'failed'
+                                    ? 'bg-[var(--gt-red)]'
+                                    : 'bg-zinc-500'
+                              return (
+                                <span
+                                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`}
+                                  title={`last run: ${last.status} · ${fmtRelative(last.startedAt)}`}
+                                />
+                              )
+                            })()
                           )}
                         </div>
                         {a.description && (
