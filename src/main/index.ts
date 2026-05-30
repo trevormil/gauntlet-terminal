@@ -3,7 +3,7 @@ import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { statSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { statSync, existsSync, readdirSync, readFileSync, writeFileSync, openSync } from 'node:fs'
 import { spawn as cpSpawn } from 'node:child_process'
 import * as pty from 'node-pty'
 
@@ -700,6 +700,125 @@ ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
 // Reveal ~/.config/TerMinal/ in Finder. Power-user QoL for editing
 // schedules.json, settings.json, or per-(repo, agent) state sidecars by hand.
 ipcMain.handle('open:config-dir', () => shell.openPath(join(homedir(), '.config', 'TerMinal')))
+
+// In-app rebuild. Spawns bin/release fully detached and routes its output to
+// a log file the renderer can tail. The release script kills the running
+// TerMinal mid-flow (so it can replace /Applications/TerMinal.app); the
+// detached child outlives the parent and finishes the install + relaunch.
+//
+// Why detached + own process group: bin/release does `pkill -f
+// "/Applications/TerMinal.app/Contents/MacOS"` which would otherwise kill the
+// build itself. Putting the child in its own group + ignoring stdio + unref()
+// makes it a true daemon — the harness exits cleanly and the script lands a
+// fresh app in /Applications a minute or so later.
+const RELEASE_LOG = join(homedir(), '.config', 'TerMinal', 'release.log')
+let releasePid: number | null = null
+ipcMain.handle('release:start', () => {
+  if (releasePid) {
+    try {
+      process.kill(releasePid, 0) // throws if process is gone
+      return { error: 'release already running' }
+    } catch {
+      releasePid = null
+    }
+  }
+  // Resolve the repo root from this app's bundle. In dev this is the source
+  // tree; in the packaged build there's no bin/release (packaged users would
+  // need the source checkout). Refuse cleanly if it's missing.
+  // We probe a few candidates: GT_REPO env var (dev override) → process.cwd()
+  // → __dirname climb-up. This is enough for the dev / source-installed
+  // workflow TerMinal actually runs in.
+  const candidates = [
+    process.env.GT_TERMINAL_REPO || '',
+    process.cwd(),
+    join(homedir(), 'CompSci', 'gauntlet', 'TerMinal'),
+  ].filter(Boolean)
+  let repoRoot = ''
+  for (const c of candidates) {
+    if (existsSync(join(c, 'bin', 'release'))) {
+      repoRoot = c
+      break
+    }
+  }
+  if (!repoRoot) {
+    return {
+      error:
+        'bin/release not found — set GT_TERMINAL_REPO to your source checkout, or run from the repo directory',
+    }
+  }
+  // Truncate the log so each rebuild starts fresh.
+  try {
+    writeFileSync(RELEASE_LOG, `▸ rebuild started ${new Date().toISOString()}\n▸ repo: ${repoRoot}\n`)
+  } catch {
+    /* best-effort */
+  }
+  const out = openSync(RELEASE_LOG, 'a')
+  const child = cpSpawn('bin/release', [], {
+    cwd: repoRoot,
+    detached: true,
+    stdio: ['ignore', out, out],
+    env: process.env,
+  })
+  child.unref()
+  releasePid = child.pid || null
+  return { ok: true, pid: releasePid, log: RELEASE_LOG, repoRoot }
+})
+ipcMain.handle('release:tail', () => {
+  try {
+    return readFileSync(RELEASE_LOG, 'utf8')
+  } catch {
+    return ''
+  }
+})
+// Harness self-status. Meta-observability snapshot so the operator can see
+// how the harness itself is doing without ls-ing config dirs. Cheap: one
+// directory listing + the in-memory run map.
+ipcMain.handle('harness:status', () => {
+  const cfgDir = join(homedir(), '.config', 'TerMinal')
+  const cronRunsDir = join(cfgDir, 'cron-runs')
+  let cronRunFiles = 0
+  let cronWorktrees = 0
+  if (existsSync(cronRunsDir)) {
+    try {
+      cronRunFiles = readdirSync(cronRunsDir).filter((f) => f.endsWith('.json')).length
+    } catch {
+      /* ignore */
+    }
+  }
+  const wtDir = join(cfgDir, 'cron-worktrees')
+  if (existsSync(wtDir)) {
+    try {
+      cronWorktrees = readdirSync(wtDir).length
+    } catch {
+      /* ignore */
+    }
+  }
+  const cronRuns = readCronRuns(undefined, 1000)
+  const running = cronRuns.filter((r) => r.status === 'running').length
+  const failed24h = cronRuns.filter(
+    (r) => r.status === 'failed' && r.startedAt >= Date.now() - 86_400_000,
+  ).length
+  const paused = listDisabled().length
+  const inProcessRunning = listRuns().filter((r) => r.status === 'running').length
+  return {
+    cronRunFiles,
+    cronWorktrees,
+    cronRunsRunning: running,
+    cronFailed24h: failed24h,
+    inProcessRunning,
+    schedulesPaused: paused,
+    configDir: cfgDir,
+  }
+})
+ipcMain.handle('release:status', () => {
+  if (!releasePid) return { running: false }
+  try {
+    process.kill(releasePid, 0)
+    return { running: true, pid: releasePid }
+  } catch {
+    return { running: false, pid: releasePid }
+  }
+})
 // Hand a target to a configured external app via `open -a <App>` (robust, no
 // PATH/CLI dependency), falling back to the OS default if the app isn't there.
 function openInApp(appName: string, target: string, fallback: () => void) {

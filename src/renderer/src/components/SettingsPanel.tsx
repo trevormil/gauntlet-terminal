@@ -62,6 +62,203 @@ function Readiness({ ok, name, hint }: { ok: boolean; name: string; hint: string
   )
 }
 
+// Tab visibility — let the user hide tabs they never use. Persists to
+// localStorage and broadcasts a synthetic event so SessionView re-renders
+// without a window reload.
+function TabsVisibilityPanel() {
+  const [hidden, setHidden] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('gt.tabs.hidden') || '[]')
+      return Array.isArray(v) ? v : []
+    } catch {
+      return []
+    }
+  })
+  // ALL_TABS is the source of truth for the tab list — import lazily to avoid
+  // a circular import (tabs/registry → tabs/* → components/SettingsPanel).
+  const [allTabs, setAllTabs] = useState<{ id: string; title: string; order: number }[]>([])
+  useEffect(() => {
+    import('../tabs/registry').then((m) => {
+      setAllTabs(
+        [...m.ALL_TABS]
+          .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
+          .map((t) => ({ id: t.id, title: t.title, order: t.order ?? 99 })),
+      )
+    })
+  }, [])
+  const toggle = (id: string) => {
+    setHidden((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      localStorage.setItem('gt.tabs.hidden', JSON.stringify(next))
+      window.dispatchEvent(new Event('gt.tabs.hidden.changed'))
+      return next
+    })
+  }
+  if (allTabs.length === 0)
+    return <div className="text-[11px] text-zinc-600">loading…</div>
+  return (
+    <div className="grid grid-cols-2 gap-1">
+      {allTabs.map((t) => {
+        const off = hidden.includes(t.id)
+        return (
+          <button
+            key={t.id}
+            onClick={() => toggle(t.id)}
+            className={`flex items-center justify-between rounded-md border px-2 py-1 text-[11px] ${
+              off
+                ? 'border-[var(--gt-border)] bg-black/20 text-zinc-500 line-through'
+                : 'border-[var(--gt-accent)]/40 bg-[var(--gt-accent)]/10 text-zinc-100'
+            }`}
+          >
+            <span className="truncate">{t.title}</span>
+            <span className="text-[9.5px] text-zinc-600">{off ? 'hidden' : 'shown'}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Harness self-status: meta-observability snapshot of how TerMinal's own
+// infrastructure is doing. Refreshes on mount + every 5s while visible.
+function HarnessStatusPanel() {
+  const [s, setS] = useState<Awaited<ReturnType<typeof window.gt.harnessStatus>> | null>(null)
+  useEffect(() => {
+    const load = () => window.gt.harnessStatus().then(setS)
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
+  }, [])
+  if (!s)
+    return (
+      <div className="rounded-md border border-dashed border-[var(--gt-border)] p-3 text-[11px] text-zinc-600">
+        loading…
+      </div>
+    )
+  const Cell = ({
+    label,
+    value,
+    tone = 'mute',
+  }: {
+    label: string
+    value: number | string
+    tone?: 'mute' | 'green' | 'red' | 'yellow' | 'blue'
+  }) => {
+    const cls =
+      tone === 'green'
+        ? 'text-[var(--gt-green)]'
+        : tone === 'red'
+          ? 'text-[var(--gt-red)]'
+          : tone === 'yellow'
+            ? 'text-[var(--gt-yellow)]'
+            : tone === 'blue'
+              ? 'text-[var(--gt-accent-light)]'
+              : 'text-zinc-200'
+    return (
+      <div className="flex flex-col items-start gap-0.5 rounded-md border border-[var(--gt-border)] bg-black/20 px-2.5 py-1.5">
+        <span className="text-[9.5px] uppercase tracking-wider text-zinc-500">{label}</span>
+        <span className={`tabular-nums text-[15px] font-semibold ${cls}`}>{value}</span>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2 text-zinc-300">
+        <Cell label="cron records" value={s.cronRunFiles} />
+        <Cell
+          label="cron running"
+          value={s.cronRunsRunning}
+          tone={s.cronRunsRunning > 0 ? 'blue' : 'mute'}
+        />
+        <Cell
+          label="in-proc running"
+          value={s.inProcessRunning}
+          tone={s.inProcessRunning > 0 ? 'blue' : 'mute'}
+        />
+        <Cell
+          label="failed (24h)"
+          value={s.cronFailed24h}
+          tone={s.cronFailed24h > 0 ? 'red' : 'green'}
+        />
+        <Cell
+          label="paused schedules"
+          value={s.schedulesPaused}
+          tone={s.schedulesPaused > 0 ? 'yellow' : 'mute'}
+        />
+        <Cell label="cron worktrees" value={s.cronWorktrees} />
+      </div>
+      <div className="text-[10px] text-zinc-600">
+        Updated live · stored in <code className="font-mono">{tilde(s.configDir)}</code>
+      </div>
+    </div>
+  )
+}
+
+// In-app rebuild panel. Kicks off bin/release as a detached daemon, tails the
+// log live in the UI, and prepares the user for the imminent app quit. The
+// release script kills the running TerMinal halfway through to replace
+// /Applications — that's expected, and the relaunch is the script's job.
+function RebuildPanel() {
+  const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [log, setLog] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  // Tail the log every second while a rebuild is going. We also keep polling
+  // status:running so the indicator clears once bin/release finishes (in
+  // practice the app gets quit + relaunched, so this UI is mostly seen for
+  // the "build…" phase before the kill lands).
+  useEffect(() => {
+    if (!running) return
+    let alive = true
+    const tick = async () => {
+      const text = await window.gt.release.tail()
+      const st = await window.gt.release.status()
+      if (!alive) return
+      setLog(text)
+      if (!st.running) setRunning(false)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [running])
+
+  const start = async () => {
+    setError(null)
+    setBusy(true)
+    const r = await window.gt.release.start()
+    setBusy(false)
+    if ('error' in r) {
+      setError(r.error)
+      return
+    }
+    setRunning(true)
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={start}
+        disabled={busy || running}
+        className="flex w-full items-center gap-2 rounded-lg border border-[var(--gt-accent)]/40 bg-[var(--gt-accent)]/10 px-3 py-2 text-left text-[12px] text-zinc-100 hover:bg-[var(--gt-accent)]/20 disabled:opacity-50"
+      >
+        {busy || running ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} strokeWidth={2} />}
+        {running ? 'Rebuilding… (app will quit + relaunch automatically)' : 'Rebuild + reinstall now'}
+        <span className="ml-auto text-[10.5px] text-zinc-600">bun run release</span>
+      </button>
+      {error && <div className="text-[11px] text-amber-400">{error}</div>}
+      {(running || log) && (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--gt-border)] bg-[#0c0c11] p-2 font-mono text-[10.5px] leading-relaxed text-zinc-300">
+          {log || '(starting…)'}
+        </pre>
+      )}
+    </div>
+  )
+}
+
 export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; onRerunSetup: () => void }) {
   const [s, setS] = useState<Settings | null>(null)
   const [env, setEnv] = useState<EnvDetect | null>(null)
@@ -358,6 +555,32 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
                 Re-run first-time setup
               </button>
             </div>
+          </Section>
+
+          {/* Tab visibility — hide tabs you never use. */}
+          <Section
+            title="Tabs"
+            desc="Hide tabs you don't use. They stay registered (so cross-tab nav still works); they just don't render in the tab bar."
+          >
+            <TabsVisibilityPanel />
+          </Section>
+
+          {/* Harness self-status — meta-observability snapshot. */}
+          <Section
+            title="Harness status"
+            desc="How TerMinal's own infrastructure is doing right now. Refreshes every 5s."
+          >
+            <HarnessStatusPanel />
+          </Section>
+
+          {/* In-app rebuild — eats own dog food. Spawns bin/release fully
+              detached so it survives the pkill mid-flow + lands a fresh app
+              in /Applications + relaunches. */}
+          <Section
+            title="Rebuild + reinstall"
+            desc="Run bin/release from inside the app — builds, signs, replaces /Applications/TerMinal.app, relaunches. Source checkout must be on this machine."
+          >
+            <RebuildPanel />
           </Section>
 
           <div className="px-5 py-3 text-center text-[10.5px] text-zinc-600">

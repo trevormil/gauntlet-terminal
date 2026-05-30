@@ -36,6 +36,13 @@ function fmtRelative(ts: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
 }
+function fmtDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`
+  return `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`
+}
 
 const AGENT_ICON: Record<string, LucideIcon> = {
   BookText,
@@ -414,7 +421,9 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   // in `runs`; for cron runs, fetch via the unified endpoint so the left rail
   // also covers schedule-fired runs. Refresh on activity:event so a freshly
   // finished cron run updates the status dot immediately.
-  const [allRuns, setAllRuns] = useState<{ agentId: string; status: string; startedAt: number }[]>([])
+  const [allRuns, setAllRuns] = useState<
+    { id: string; agentId: string; status: string; startedAt: number; endedAt?: number }[]
+  >([])
   useEffect(() => {
     const load = () => window.gt.agents.allRuns().then(setAllRuns)
     load()
@@ -953,6 +962,61 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                       <span className="text-zinc-700">·</span>
                       <span className="tabular-nums text-zinc-600">{agentRuns.length}</span>
                     </h3>
+                    {/* Sparkline: last 20 runs across cron + in-process, newest
+                        on the right. Each bar is a tiny color-coded square
+                        sized by duration (longer run = taller bar, capped).
+                        Hover shows status + duration + when. */}
+                    {(() => {
+                      const allForAgent = allRuns
+                        .filter((r) => r.agentId === selectedAgent.id)
+                        .slice(0, 20)
+                        .reverse()
+                      if (allForAgent.length === 0) return null
+                      // Need durations — refetch from agentRuns/allRuns. allRuns
+                      // is the unified-runs shape with optional endedAt.
+                      const withDuration = allForAgent.map((r) => {
+                        const dur =
+                          'endedAt' in r && (r as { endedAt?: number }).endedAt
+                            ? (r as { endedAt: number }).endedAt - r.startedAt
+                            : null
+                        return { ...r, dur }
+                      })
+                      const maxDur = Math.max(
+                        1000,
+                        ...withDuration.map((r) => r.dur || 0),
+                      )
+                      return (
+                        <div className="mb-3 flex items-end gap-[3px] rounded-md border border-[var(--gt-border)] bg-black/30 p-2">
+                          {withDuration.map((r, i) => {
+                            const h =
+                              r.dur === null
+                                ? 24
+                                : Math.max(4, Math.round((r.dur / maxDur) * 32))
+                            const tone =
+                              r.status === 'done'
+                                ? 'bg-[var(--gt-green)]'
+                                : r.status === 'failed'
+                                  ? 'bg-[var(--gt-red)]'
+                                  : r.status === 'running'
+                                    ? 'bg-[var(--gt-accent-light)] gt-pulse'
+                                    : 'bg-zinc-600'
+                            const when = new Date(r.startedAt).toLocaleString()
+                            const durLabel = r.dur === null ? 'running' : fmtDuration(r.dur)
+                            return (
+                              <span
+                                key={r.id}
+                                title={`${i + 1 + allForAgent.length - withDuration.length}. ${r.status} · ${durLabel} · ${when}`}
+                                className={`w-1.5 rounded-sm ${tone}`}
+                                style={{ height: `${h}px` }}
+                              />
+                            )
+                          })}
+                          <span className="ml-2 text-[9.5px] text-zinc-600">
+                            last {withDuration.length} (oldest → newest)
+                          </span>
+                        </div>
+                      )
+                    })()}
                     {agentRuns.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-[var(--gt-border)] p-4 text-center text-[11px] text-zinc-600">
                         No runs yet. Click <span className="mx-0.5 font-semibold text-zinc-400">Run</span> above to

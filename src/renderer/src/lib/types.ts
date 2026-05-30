@@ -601,6 +601,20 @@ export type GtApi = {
   openInBrowser: (url: string) => Promise<void>
   openInEditor: (path?: string) => Promise<void>
   openConfigDir: () => Promise<string>
+  release: {
+    start: () => Promise<{ ok: true; pid: number | null; log: string; repoRoot: string } | { error: string }>
+    tail: () => Promise<string>
+    status: () => Promise<{ running: boolean; pid?: number | null }>
+  }
+  harnessStatus: () => Promise<{
+    cronRunFiles: number
+    cronWorktrees: number
+    cronRunsRunning: number
+    cronFailed24h: number
+    inProcessRunning: number
+    schedulesPaused: number
+    configDir: string
+  }>
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
   notes: {

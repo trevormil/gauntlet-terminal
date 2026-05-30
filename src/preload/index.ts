@@ -182,6 +182,12 @@ const gt = {
   openInBrowser: (url: string) => ipcRenderer.invoke('open:in-browser', url),
   openInEditor: (path?: string) => ipcRenderer.invoke('open:in-editor', path),
   openConfigDir: () => ipcRenderer.invoke('open:config-dir'),
+  release: {
+    start: () => ipcRenderer.invoke('release:start'),
+    tail: () => ipcRenderer.invoke('release:tail'),
+    status: () => ipcRenderer.invoke('release:status'),
+  },
+  harnessStatus: () => ipcRenderer.invoke('harness:status'),
   clipboardWrite: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   clipboardRead: (): Promise<string> => ipcRenderer.invoke('clipboard:read'),
 

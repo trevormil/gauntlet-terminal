@@ -57,7 +57,25 @@ export function SessionView({
     () => [...ALL_PLUGINS, ...cmdPlugins].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)),
     [cmdPlugins],
   )
-  const tabs = useMemo(() => (ctx ? ALL_TABS.filter((t) => t.appliesTo(ctx)) : []), [ctx])
+  // Tab visibility: user can hide tabs they don't use via Settings → Tabs.
+  // The hidden list lives in localStorage so a fresh window respects it
+  // immediately without a settings read. ALL_TABS is the always-known set;
+  // appliesTo + the hidden filter winnow it for THIS session.
+  const [hiddenTabs, setHiddenTabs] = useState<Set<string>>(
+    () => new Set(load<string[]>('gt.tabs.hidden', [])),
+  )
+  useEffect(() => {
+    const onChange = () => setHiddenTabs(new Set(load<string[]>('gt.tabs.hidden', [])))
+    window.addEventListener('gt.tabs.hidden.changed', onChange)
+    return () => window.removeEventListener('gt.tabs.hidden.changed', onChange)
+  }, [])
+  const tabs = useMemo(
+    () =>
+      ctx
+        ? ALL_TABS.filter((t) => t.appliesTo(ctx)).filter((t) => !hiddenTabs.has(t.id))
+        : [],
+    [ctx, hiddenTabs],
+  )
 
   useEffect(() => localStorage.setItem('gt.enabled', JSON.stringify(enabled)), [enabled])
   useEffect(() => localStorage.setItem('gt.known', JSON.stringify(known)), [known])
