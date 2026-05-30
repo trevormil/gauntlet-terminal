@@ -221,6 +221,18 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
                 spellCheck={false}
                 className={`${inp} font-mono`}
               />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => window.gt.openConfigDir()}
+                  title="Reveal ~/.config/TerMinal/ in Finder — edit schedules.json, settings.json, or agent-state/ sidecars by hand"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[var(--gt-border)] px-2.5 py-1 text-[11px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+                >
+                  Open TerMinal config dir
+                </button>
+                <span className="text-[10.5px] text-zinc-600">
+                  schedules · settings · cron logs · agent state
+                </span>
+              </div>
             </div>
           </Section>
 

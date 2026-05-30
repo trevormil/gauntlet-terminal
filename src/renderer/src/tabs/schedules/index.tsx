@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Plus,
   Play,
+  Pause,
   Trash2,
   RefreshCw,
   ChevronRight,
@@ -45,6 +46,15 @@ function reltime(ts?: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
+}
+function untilFire(ts?: number | null): string {
+  if (!ts) return ''
+  const s = (ts - Date.now()) / 1000
+  if (s <= 0) return 'now'
+  if (s < 60) return `in ${Math.floor(s)}s`
+  if (s < 3600) return `in ${Math.floor(s / 60)}m`
+  if (s < 86400) return `in ${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+  return `in ${Math.floor(s / 86400)}d`
 }
 const statusTone = (s?: string): BadgeTone =>
   s === 'done' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'mute'
@@ -303,6 +313,14 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
   const [log, setLog] = useState<{ runId: string; text: string } | null>(null)
   const [msg, setMsg] = useState('')
   const [repo, setRepo] = useState('') // '' = all repos
+  // Tick the relative "fires in 12m" labels every minute. The Schedule.nextRun
+  // value is already on each record (computed by readSchedules); this just
+  // forces the count-down strings to refresh in place.
+  const [, setClockTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setClockTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
   const [disabled, setDisabledIds] = useState<Set<string>>(new Set())
   // Lazy-loaded bash bodies, keyed by agentId. Same cache pattern as the Agents tab.
   const [scriptByAgent, setScriptByAgent] = useState<Record<string, { path: string; body: string } | null>>({})
@@ -412,6 +430,45 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
           ))}
         </select>
         <div className="flex-1" />
+        {/* Pause-all / Resume-all. The runner re-reads the disabled list on
+            every fire, so the kill-switch takes effect on the next launchd
+            tick — no reconcile/restart needed. Useful for travel, slow
+            networks, or debugging without un-scheduling everything. */}
+        {(() => {
+          const total = (schedules || []).length
+          const pausedCount = (schedules || []).filter((s) => disabled.has(s.id)).length
+          const allPaused = total > 0 && pausedCount === total
+          return (
+            total > 0 && (
+              <button
+                onClick={async () => {
+                  await window.gt.schedules.disabledAll(!allPaused)
+                  reloadDisabled()
+                  flash(allPaused ? `resumed ${total} schedules` : `paused ${total} schedules`)
+                }}
+                title={
+                  allPaused
+                    ? 'Resume every schedule (re-enable launchd firing)'
+                    : 'Pause every schedule (no fires until you resume)'
+                }
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] ${
+                  allPaused
+                    ? 'border-[var(--gt-green)]/40 bg-[var(--gt-green)]/10 text-[var(--gt-green)]'
+                    : pausedCount > 0
+                      ? 'border-[var(--gt-yellow)]/40 bg-[var(--gt-yellow)]/10 text-[var(--gt-yellow)]'
+                      : 'border-[var(--gt-border)] text-zinc-400 hover:border-[var(--gt-accent)]/60'
+                }`}
+              >
+                {allPaused ? <Play size={11} strokeWidth={2.5} /> : <Pause size={11} strokeWidth={2.5} />}
+                {allPaused
+                  ? `Resume all (${total})`
+                  : pausedCount > 0
+                    ? `Pause all (${pausedCount}/${total} paused)`
+                    : `Pause all (${total})`}
+              </button>
+            )
+          )
+        })()}
         <button
           onClick={async () => {
             const r = await window.gt.schedules.reconcile()
@@ -495,6 +552,9 @@ function SchedulesTab({ ctx }: { ctx: TabContext }) {
                   </div>
                   <div className="mt-0.5 text-[11px] text-zinc-500">
                     {s.repoLabel} · next {fmtWhen(s.nextRun)}
+                    {s.nextRun && !disabled.has(s.id) && (
+                      <span className="ml-1 text-zinc-400">({untilFire(s.nextRun)})</span>
+                    )}
                     {s.lastRun ? ` · last ${reltime(s.lastRun)}` : ''}
                   </div>
                 </div>
@@ -667,11 +727,9 @@ const tab: Tab = {
   icon: CalendarClock,
   order: 3.5, // right after Agents — the software-factory backbone
   appliesTo: () => true,
-  // badge = cron runs that failed in the last 24h
-  badge: async (gt) => {
-    const day = Date.now() - 86_400_000
-    return (await gt.schedules.runs()).filter((r) => r.status === 'failed' && r.startedAt >= day).length
-  },
+  // Intentionally no badge. The Runs tab badge already surfaces "running
+  // now" + failures from the unified view; a schedules count next to the
+  // tab is noise (there's almost always >0 schedules).
   Component: SchedulesTab,
 }
 export default tab

@@ -428,14 +428,27 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   }, [selAgentId])
   // Bump the state view when ANY run for the selected agent finishes — the
   // run almost certainly wrote a new lastScannedSha/lastRunAt.
+  //
+  // onStatus only fires for IN-PROCESS runs (Run button on this tab, on
+  // Tickets, on PRs). Cron runs fire from launchd; their completion never
+  // reaches the renderer that way. We ALSO listen on activity:event because
+  // every cron run's `check`/`run-failed` activity emit lands here regardless
+  // of who started it. The state IPC is one file read — re-running it on
+  // every activity tick is dirt-cheap.
   useEffect(() => {
-    const off = window.gt.agents.onStatus((run) => {
+    const offStatus = window.gt.agents.onStatus((run) => {
       const r = run as { agentId?: string; status?: string }
       if (r.agentId === selAgentId && (r.status === 'done' || r.status === 'failed')) {
         reloadState(selAgentId)
       }
     })
-    return () => off()
+    const offAct = window.gt.activity.onEvent(() => {
+      if (selAgentId) reloadState(selAgentId)
+    })
+    return () => {
+      offStatus()
+      offAct()
+    }
   }, [selAgentId])
   const toggleExpand = (id: string) => {
     loadScript(id)

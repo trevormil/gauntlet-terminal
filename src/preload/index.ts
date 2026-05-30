@@ -100,6 +100,7 @@ const gt = {
     disabledList: () => ipcRenderer.invoke('schedules:disabled-list'),
     disabledToggle: (id: string, disabled: boolean) =>
       ipcRenderer.invoke('schedules:disabled-toggle', id, disabled),
+    disabledAll: (disabled: boolean) => ipcRenderer.invoke('schedules:disabled-all', disabled),
     design: (text: string, engine: string) => ipcRenderer.invoke('schedules:design', text, engine),
   },
   hitl: {
@@ -180,6 +181,7 @@ const gt = {
   openExternal: (url: string) => ipcRenderer.invoke('open:external', url),
   openInBrowser: (url: string) => ipcRenderer.invoke('open:in-browser', url),
   openInEditor: (path?: string) => ipcRenderer.invoke('open:in-editor', path),
+  openConfigDir: () => ipcRenderer.invoke('open:config-dir'),
   clipboardWrite: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   clipboardRead: (): Promise<string> => ipcRenderer.invoke('clipboard:read'),
 

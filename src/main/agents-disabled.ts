@@ -46,3 +46,18 @@ export function setDisabled(id: string, disabled: boolean): string[] {
   writeRaw(next)
   return next
 }
+
+// Bulk variant. Lets the Schedules tab's "Pause all" button kill-switch every
+// known schedule in one click (and the inverse to bring them all back online).
+// The runner re-reads this file every fire, so paused state takes effect on
+// the next launchd tick without an app/launchd restart.
+export function setAllDisabled(ids: string[], disabled: boolean): string[] {
+  const cur = new Set(readRaw())
+  for (const id of ids) {
+    if (disabled) cur.add(id)
+    else cur.delete(id)
+  }
+  const next = [...cur]
+  writeRaw(next)
+  return next
+}

@@ -31,7 +31,11 @@ import { readNotes, writeNotes, type NotesScope } from './notes'
 import { listDir, readFile, writeFile, searchRepo, createEntry, renameEntry, removeEntry } from './files'
 import { listProjectSessions, getProjectSession, hasSessions as repoHasSessions } from './sessions'
 import { listDocs, readDoc } from './docs'
-import { listDisabled, setDisabled as setAgentDisabled } from './agents-disabled'
+import {
+  listDisabled,
+  setDisabled as setAgentDisabled,
+  setAllDisabled as setAllSchedulesDisabled,
+} from './agents-disabled'
 import { scaffoldProject } from './scaffold'
 import { readSnippets, writeSnippets, type Snippet } from './snippets'
 import {
@@ -93,7 +97,7 @@ import {
   removeAllJobs,
   runScheduleNow,
 } from './launchd'
-import { readCronRuns, readCronRunLog, listAllRuns } from './cron-runs'
+import { readCronRuns, readCronRunLog, listAllRuns, sweepStaleCronRuns } from './cron-runs'
 import { readHitl, fileHitl, resolveHitl, removeHitl, type HitlItem } from './hitl'
 import { factoryHealth } from './factory-health'
 import { describeSpec, nextRun, type ScheduleSpec } from './cron'
@@ -572,6 +576,12 @@ ipcMain.handle('runs:log', (_e, source: 'cron' | 'agent', runId: string) => {
 })
 ipcMain.handle('schedules:disabled-list', () => listDisabled())
 ipcMain.handle('schedules:disabled-toggle', (_e, id: string, disabled: boolean) => setAgentDisabled(id, disabled))
+ipcMain.handle('schedules:disabled-all', (_e, disabled: boolean) =>
+  setAllSchedulesDisabled(
+    readSchedules(Date.now()).map((s) => s.id),
+    disabled,
+  ),
+)
 ipcMain.handle('schedules:run-log', (_e, runId: string) => readCronRunLog(runId))
 ipcMain.handle('schedules:reconcile', () => reconcileSchedules())
 // Global HITL inbox (cross-repo). Filing fires a blocked notification (TG + macOS).
@@ -687,6 +697,9 @@ ipcMain.handle('mrs:diff', (_e, iid: number) => getMrDiff(repoRootOf(cur().cwd),
 ipcMain.handle('mrs:ci', (_e, iid: number) => getMrCi(repoRootOf(cur().cwd), iid))
 ipcMain.handle('mrs:merge', (_e, iid: number) => mergeMr(repoRootOf(cur().cwd), iid))
 ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
+// Reveal ~/.config/TerMinal/ in Finder. Power-user QoL for editing
+// schedules.json, settings.json, or per-(repo, agent) state sidecars by hand.
+ipcMain.handle('open:config-dir', () => shell.openPath(join(homedir(), '.config', 'TerMinal')))
 // Hand a target to a configured external app via `open -a <App>` (robust, no
 // PATH/CLI dependency), falling back to the OS default if the app isn't there.
 function openInApp(appName: string, target: string, fallback: () => void) {
@@ -738,6 +751,11 @@ process.on('uncaughtException', (e) => console.error('[gt] uncaught:', e))
 app.whenReady().then(() => {
   fixPath() // packaged app has a minimal PATH — recover brew CLIs (glab/gh/…)
   createWindow()
+  // App-side watchdog. Catches phantom cron runs (schedule deleted before
+  // runner finalized, terminal closed mid-run, OOM) that the per-schedule
+  // sweep in bin/terminal-cron can't reach when no schedules are firing.
+  sweepStaleCronRuns()
+  setInterval(sweepStaleCronRuns, 30 * 60 * 1000)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -541,6 +541,7 @@ export type GtApi = {
     removeAll: () => Promise<{ removed: number }>
     disabledList: () => Promise<string[]>
     disabledToggle: (id: string, disabled: boolean) => Promise<string[]>
+    disabledAll: (disabled: boolean) => Promise<string[]>
     design: (text: string, engine: Engine) => Promise<AgentRun | { error: string }>
   }
   hitl: {
@@ -597,6 +598,7 @@ export type GtApi = {
   openExternal: (url: string) => Promise<void>
   openInBrowser: (url: string) => Promise<void>
   openInEditor: (path?: string) => Promise<void>
+  openConfigDir: () => Promise<string>
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
   notes: {
