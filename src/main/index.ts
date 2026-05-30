@@ -62,6 +62,8 @@ import {
   runDesignerSpawn,
   runScheduleDesignerSpawn,
   locateScript,
+  readAgentState,
+  resetAgentState,
   convertAgentToScript,
   runPrAgent,
   listPipelines,
@@ -466,6 +468,14 @@ ipcMain.handle('agents:script', (_e, id: string) => {
   } catch {
     return null
   }
+})
+ipcMain.handle('agents:state', (_e, id: string) => {
+  const root = repoRootOf(cur().cwd) || ''
+  return readAgentState(root, id)
+})
+ipcMain.handle('agents:state-reset', (_e, id: string) => {
+  const root = repoRootOf(cur().cwd) || ''
+  return resetAgentState(root, id)
 })
 ipcMain.handle(
   'agents:design',

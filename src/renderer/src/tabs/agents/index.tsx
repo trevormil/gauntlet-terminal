@@ -26,7 +26,16 @@ import { EngineLogo } from '../../components/EngineLogo'
 import { EngineModelPicker } from '../../components/EngineModelPicker'
 import { BashHighlight } from '../../components/BashHighlight'
 import type { BadgeTone } from '../../components/ui'
+import { navigateTo } from '../../lib/nav'
 import type { Tab, TabContext, Agent, AgentRun, Engine } from '../../lib/types'
+
+function fmtRelative(ts: number): string {
+  const s = (Date.now() - ts) / 1000
+  if (s < 60) return `${Math.floor(s)}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
 
 const AGENT_ICON: Record<string, LucideIcon> = {
   BookText,
@@ -400,6 +409,34 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
   useEffect(() => {
     if (selAgentId) loadScript(selAgentId)
   }, [selAgentId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Per-(repo, agent) state sidecar. Surfaced in the right pane so the
+  // operator can see "last scanned X ago" without `cat`-ing the JSON.
+  // Re-fetched on select + after a successful run completes (the agent
+  // would normally call `terminal-cli state mark-main` at exit).
+  const [state, setState] = useState<{
+    path: string
+    exists: boolean
+    state: Record<string, unknown>
+  } | null>(null)
+  const reloadState = (id: string | null) => {
+    if (!id) return setState(null)
+    window.gt.agents.state(id).then(setState)
+  }
+  useEffect(() => {
+    reloadState(selAgentId)
+  }, [selAgentId])
+  // Bump the state view when ANY run for the selected agent finishes — the
+  // run almost certainly wrote a new lastScannedSha/lastRunAt.
+  useEffect(() => {
+    const off = window.gt.agents.onStatus((run) => {
+      const r = run as { agentId?: string; status?: string }
+      if (r.agentId === selAgentId && (r.status === 'done' || r.status === 'failed')) {
+        reloadState(selAgentId)
+      }
+    })
+    return () => off()
+  }, [selAgentId])
   const toggleExpand = (id: string) => {
     loadScript(id)
     setExpanded((s) => {
@@ -746,6 +783,112 @@ function AgentsTab({ ctx }: { ctx: TabContext }) {
                       <div className="rounded-lg border border-dashed border-[var(--gt-border)] p-4 text-center text-[11px] text-zinc-600">
                         Loading script…
                       </div>
+                    )}
+                  </section>
+
+                  {/* Per-(repo, agent) state sidecar — what the agent remembers
+                      between runs. Empty = first-time / never `terminal-cli state
+                      mark-main`'d. Reset wipes the file so the next run does a
+                      cold scan. */}
+                  <section className="border-b border-[var(--gt-border)]/60 p-4">
+                    <h3 className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                      <Badge tone={state?.exists ? 'accent' : 'mute'}>state</Badge>
+                      <span className="ml-1 min-w-0 flex-1 truncate font-mono text-[9.5px] font-normal normal-case tracking-normal text-zinc-600">
+                        {state?.path || '…'}
+                      </span>
+                      {state?.exists && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Reset state? Next run will scan from cold.')) return
+                            await window.gt.agents.stateReset(selectedAgent.id)
+                            reloadState(selectedAgent.id)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-zinc-400 hover:border-[var(--gt-red)]/60 hover:text-[var(--gt-red)]"
+                        >
+                          reset
+                        </button>
+                      )}
+                    </h3>
+                    {!state ? (
+                      <div className="rounded-lg border border-dashed border-[var(--gt-border)] p-3 text-center text-[11px] text-zinc-600">
+                        loading…
+                      </div>
+                    ) : !state.exists ? (
+                      <div className="rounded-lg border border-dashed border-[var(--gt-border)] p-3 text-[11px] leading-relaxed text-zinc-500">
+                        No state yet. Cadence agents persist their progress here via{' '}
+                        <code className="font-mono text-zinc-300">terminal-cli state mark-main</code>; nothing to show
+                        until the first run writes.
+                      </div>
+                    ) : (
+                      (() => {
+                        const s = state.state
+                        const sha =
+                          typeof s.lastScannedSha === 'string' ? s.lastScannedSha : ''
+                        const ref = typeof s.lastScannedRef === 'string' ? s.lastScannedRef : ''
+                        const at =
+                          typeof s.lastRunAt === 'number' ? s.lastRunAt : 0
+                        const runId =
+                          typeof s.lastRunId === 'string' ? s.lastRunId : ''
+                        const reserved = new Set([
+                          'lastScannedSha',
+                          'lastScannedRef',
+                          'lastRunAt',
+                          'lastRunId',
+                        ])
+                        const extras = Object.entries(s).filter(([k]) => !reserved.has(k))
+                        const relTime = at ? fmtRelative(at) : ''
+                        return (
+                          <div className="space-y-1.5 rounded-lg border border-[var(--gt-border)] bg-black/30 p-3 text-[11px] text-zinc-300">
+                            {sha && (
+                              <div className="flex items-center gap-2">
+                                <span className="w-28 shrink-0 text-zinc-600">last scanned</span>
+                                <span className="font-mono text-zinc-200">{sha.slice(0, 12)}</span>
+                                {ref && (
+                                  <span className="rounded-md border border-[var(--gt-border)] px-1 py-0.5 text-[9.5px] uppercase text-zinc-500">
+                                    {ref}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {at > 0 && (
+                              <div className="flex items-center gap-2">
+                                <span className="w-28 shrink-0 text-zinc-600">last run at</span>
+                                <span>{new Date(at).toLocaleString()}</span>
+                                <span className="text-zinc-600">· {relTime}</span>
+                              </div>
+                            )}
+                            {runId && (
+                              <div className="flex items-center gap-2">
+                                <span className="w-28 shrink-0 text-zinc-600">last run id</span>
+                                <span className="truncate font-mono text-[10px] text-zinc-400">{runId}</span>
+                                <button
+                                  onClick={() => navigateTo('runs', { runId })}
+                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-[var(--gt-accent)]/60 hover:text-zinc-100"
+                                >
+                                  view run
+                                </button>
+                              </div>
+                            )}
+                            {extras.length > 0 && (
+                              <div className="mt-2 border-t border-[var(--gt-border)]/40 pt-2">
+                                <div className="mb-1 text-[9.5px] uppercase tracking-wider text-zinc-600">
+                                  extra keys
+                                </div>
+                                <div className="space-y-0.5 font-mono text-[10.5px]">
+                                  {extras.map(([k, v]) => (
+                                    <div key={k} className="flex items-baseline gap-2">
+                                      <span className="text-zinc-500">{k}</span>
+                                      <span className="text-zinc-300">
+                                        {typeof v === 'string' ? v : JSON.stringify(v)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()
                     )}
                   </section>
 

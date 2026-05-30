@@ -8,6 +8,7 @@ import {
   readdirSync,
   rmSync,
   chmodSync,
+  unlinkSync,
 } from 'node:fs'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
@@ -431,6 +432,44 @@ export function locateScript(repoRoot: string, agentId: string): string | null {
   const global = join(GLOBAL_SCRIPTS_DIR, `${agentId}.sh`)
   if (existsSync(global)) return global
   return null
+}
+
+// State sidecar — mirrors terminal-cli's path layout exactly:
+//   ~/.config/TerMinal/agent-state/<repo-basename>/<agentId>.json
+// We expose read + reset to the renderer so the Agents tab can surface
+// "last scanned X ago" without users `cat`-ing the JSON.
+const AGENT_STATE_DIR = join(homedir(), '.config', 'TerMinal', 'agent-state')
+function agentStateFile(repoRoot: string, agentId: string): string {
+  return join(AGENT_STATE_DIR, basename(repoRoot) || 'unknown', `${agentId}.json`)
+}
+export type AgentState = {
+  lastScannedSha?: string
+  lastScannedRef?: string
+  lastRunAt?: number
+  lastRunId?: string
+  [key: string]: unknown
+}
+export function readAgentState(
+  repoRoot: string,
+  agentId: string,
+): { path: string; exists: boolean; state: AgentState } {
+  const path = agentStateFile(repoRoot, agentId)
+  if (!existsSync(path)) return { path, exists: false, state: {} }
+  try {
+    return { path, exists: true, state: JSON.parse(readFileSync(path, 'utf8')) as AgentState }
+  } catch {
+    return { path, exists: true, state: {} }
+  }
+}
+export function resetAgentState(repoRoot: string, agentId: string): { ok: true } | { error: string } {
+  const path = agentStateFile(repoRoot, agentId)
+  if (!existsSync(path)) return { ok: true }
+  try {
+    unlinkSync(path)
+    return { ok: true }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 }
 
 function buildCmd(engine: Engine, worktree: string, prompt: string, model?: string): string {

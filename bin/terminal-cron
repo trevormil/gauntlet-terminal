@@ -290,6 +290,14 @@ function sweepStaleRuns() {
       }
       writeFileSync(path, JSON.stringify(finalized, null, 2))
       if (rec.scheduleId) stamp(rec.scheduleId, { lastStatus: 'failed' })
+      const staleTicketPath = rec.repoRoot
+        ? fileTicket(rec.repoRoot, {
+            title: `Cron run stale: ${rec.agentTitle || rec.agentId}`,
+            body: `The scheduled run for **${rec.agentTitle || rec.agentId}** (branch \`${rec.branch}\`) was running for >2h with no live process and was swept by the watchdog.\n\n- run id: \`${rec.id}\`\n- log: \`~/.config/TerMinal/cron-runs/${rec.id}.log\`\n- worktree: \`${rec.worktree}\`\n\nInvestigate why the runner died mid-run (terminal closed, OOM, launchd killed, network hang). Fix the root cause; re-enable the schedule in the Schedules tab if the circuit-breaker tripped.`,
+            type: 'bug',
+            priority: 'high',
+          })
+        : null
       fileHitl({
         title: `Cron run stale · ${rec.agentTitle || rec.agentId}`,
         action: 'runner died mid-run — swept by watchdog and marked failed',
@@ -298,15 +306,8 @@ function sweepStaleRuns() {
         repoRoot: rec.repoRoot,
         runId: rec.id,
         runSource: 'cron',
+        ticketPath: staleTicketPath,
       })
-      if (rec.repoRoot) {
-        fileTicket(rec.repoRoot, {
-          title: `Cron run stale: ${rec.agentTitle || rec.agentId}`,
-          body: `The scheduled run for **${rec.agentTitle || rec.agentId}** (branch \`${rec.branch}\`) was running for >2h with no live process and was swept by the watchdog.\n\n- run id: \`${rec.id}\`\n- log: \`~/.config/TerMinal/cron-runs/${rec.id}.log\`\n- worktree: \`${rec.worktree}\`\n\nInvestigate why the runner died mid-run (terminal closed, OOM, launchd killed, network hang). Fix the root cause; re-enable the schedule in the Schedules tab if the circuit-breaker tripped.`,
-          type: 'bug',
-          priority: 'high',
-        })
-      }
       swept++
       log(`watchdog: marked ${rec.id} stale`)
     }
@@ -479,6 +480,10 @@ async function runSchedule(id) {
       repo: sched.repoLabel,
       repoRoot: repo,
     })
+    const wtTicketPath = fileTicket(repo, {
+      title: `Cron run failed: ${sched.agentTitle} (worktree setup)`,
+      body: `Worktree setup failed for the scheduled \`${sched.agentTitle}\` run.\n\n\`\`\`\n${msg}\n\`\`\`\n\n- schedule: \`${id}\`\n- run: \`${runId}\`\n- log: \`~/.config/TerMinal/cron-runs/${runId}.log\``,
+    })
     fileHitl({
       title: `Scheduled run failed · ${sched.agentTitle}`,
       action: 'worktree setup failed — check the repo and cron log',
@@ -487,10 +492,7 @@ async function runSchedule(id) {
       repoRoot: repo,
       runId,
       runSource: 'cron',
-    })
-    fileTicket(repo, {
-      title: `Cron run failed: ${sched.agentTitle} (worktree setup)`,
-      body: `Worktree setup failed for the scheduled \`${sched.agentTitle}\` run.\n\n\`\`\`\n${msg}\n\`\`\`\n\n- schedule: \`${id}\`\n- run: \`${runId}\`\n- log: \`~/.config/TerMinal/cron-runs/${runId}.log\``,
+      ticketPath: wtTicketPath,
     })
     maybeCircuitBreak(id, sched)
     return 1
@@ -569,6 +571,10 @@ async function runSchedule(id) {
     repoRoot: repo,
   })
   if (code !== 0) {
+    const failTicketPath = fileTicket(repo, {
+      title: `Cron run failed: ${sched.agentTitle} (exit ${code})`,
+      body: `The scheduled \`${sched.agentTitle}\` run exited with code ${code}.\n\n- schedule: \`${id}\`\n- run: \`${runId}\`\n- branch: \`${branch}\`\n- worktree: \`${worktree}\`\n- log: \`~/.config/TerMinal/cron-runs/${runId}.log\`\n\nInvestigate the log and fix the underlying issue; circuit-breaker auto-disables after ${CIRCUIT_BREAK_AFTER} consecutive failures.`,
+    })
     fileHitl({
       title: `Scheduled run failed · ${sched.agentTitle}`,
       action: `exit ${code} — review the run log`,
@@ -577,10 +583,7 @@ async function runSchedule(id) {
       repoRoot: repo,
       runId,
       runSource: 'cron',
-    })
-    fileTicket(repo, {
-      title: `Cron run failed: ${sched.agentTitle} (exit ${code})`,
-      body: `The scheduled \`${sched.agentTitle}\` run exited with code ${code}.\n\n- schedule: \`${id}\`\n- run: \`${runId}\`\n- branch: \`${branch}\`\n- worktree: \`${worktree}\`\n- log: \`~/.config/TerMinal/cron-runs/${runId}.log\`\n\nInvestigate the log and fix the underlying issue; circuit-breaker auto-disables after ${CIRCUIT_BREAK_AFTER} consecutive failures.`,
+      ticketPath: failTicketPath,
     })
     maybeCircuitBreak(id, sched)
   }

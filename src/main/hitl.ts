@@ -31,6 +31,11 @@ export type HitlItem = {
   // source run so the operator can read the log that prompted the block.
   runId?: string
   runSource?: 'cron' | 'agent'
+  // Path to the auto-filed backlog ticket that pairs with this HITL (cron
+  // failures file both — HITL is the "look at me" channel, the ticket is
+  // the durable triage record). Lets the HITL tab link straight to the
+  // ticket in the Tickets tab.
+  ticketPath?: string
 }
 
 export function readHitl(): HitlItem[] {

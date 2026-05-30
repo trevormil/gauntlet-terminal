@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Hand, Check, Trash2, RotateCcw, ListChecks } from 'lucide-react'
+import { Hand, Check, Trash2, RotateCcw, ListChecks, Ticket as TicketIcon } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import type { BadgeTone } from '../../components/ui'
 import { navigateTo } from '../../lib/nav'
 import type { Tab, TabContext, HitlItem } from '../../lib/types'
+
+// Derive the Tickets-tab slug (file basename without extension) from a ticket
+// path. Cron-failure HITLs pair with a ticket whose path looks like
+// `…/backlog/0123-cron-fail-foo.md` — the slug is `0123-cron-fail-foo`.
+function ticketSlugFromPath(path: string): string {
+  const base = path.split('/').pop() || ''
+  return base.replace(/\.md$/, '')
+}
 
 // Human-in-the-loop: a GLOBAL, cross-repo inbox of TRUE human-needs — decisions,
 // approvals, creds, a failed cron job. NOT per-repo backlog tickets, and NOT
@@ -104,6 +112,18 @@ function HitlTab(_props: { ctx: TabContext }) {
                       >
                         <ListChecks size={11} strokeWidth={2} />
                         View run
+                      </button>
+                    )}
+                    {h.ticketPath && (
+                      <button
+                        onClick={() =>
+                          navigateTo('tickets', { slug: ticketSlugFromPath(h.ticketPath!) })
+                        }
+                        title="Jump to the backlog ticket auto-filed alongside this HITL"
+                        className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-border)] px-2 py-1 text-[11px] text-zinc-400 hover:border-[var(--gt-accent)]/60 hover:text-zinc-100"
+                      >
+                        <TicketIcon size={11} strokeWidth={2} />
+                        View ticket
                       </button>
                     )}
                     {h.status === 'open' ? (

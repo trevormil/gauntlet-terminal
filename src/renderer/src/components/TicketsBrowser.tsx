@@ -7,6 +7,7 @@ import { EngineLogo } from './EngineLogo'
 import { EngineModelPicker } from './EngineModelPicker'
 import { MrDetailView } from './MrDetail'
 import { statusTone, priorityTone, typeTone, horizonTone, stateTone, verdictTone, testTone } from '../lib/badges'
+import { onNavigate } from '../lib/nav'
 import type { BadgeTone } from './ui'
 import type { Ticket, TabContext, Mr, Engine } from '../lib/types'
 
@@ -200,6 +201,17 @@ export function TicketsBrowser({ ctx, hitlOnly = false }: { ctx: TabContext; hit
       if (ev.kind === 'ticket-filed' || ev.kind === 'ticket-closed') loadTickets()
     })
     return off
+  }, [])
+
+  // Cross-tab nav: when HITL (or any other tab) calls navigateTo('tickets',
+  // { slug }) we pre-select that ticket so the operator lands on the
+  // auto-filed cron-failure ticket without scrolling.
+  useEffect(() => {
+    return onNavigate((ev) => {
+      if (ev.tabId !== 'tickets') return
+      const slug = (ev.payload?.slug as string) || ''
+      if (slug) setSel(slug)
+    })
   }, [])
 
   const doSpawn = async () => {

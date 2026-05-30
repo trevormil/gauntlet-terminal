@@ -179,6 +179,16 @@ export type Agent = {
   source?: 'default' | 'override' | 'repo' | 'global'
   hasScript?: boolean
 }
+// Per-(repo, agent) state sidecar — the runtime owns lastScannedSha /
+// lastScannedRef / lastRunAt / lastRunId; scripts can pin arbitrary
+// string keys beyond that via `terminal-cli state set <key> <value>`.
+export type AgentStateRecord = {
+  lastScannedSha?: string
+  lastScannedRef?: string
+  lastRunAt?: number
+  lastRunId?: string
+  [key: string]: unknown
+}
 export type Persona = { id: string; title: string; description: string; icon?: string; prompt: string }
 export type PipelineId = 'single' | 'review' | 'review-iterate'
 export type PipelineInfo = { id: PipelineId; title: string; description: string }
@@ -273,6 +283,7 @@ export type HitlItem = {
   resolvedAt?: number
   runId?: string
   runSource?: 'cron' | 'agent'
+  ticketPath?: string
 }
 export type UnifiedRun = {
   id: string
@@ -476,6 +487,8 @@ export type GtApi = {
     save: (agent: Partial<Agent> & { id: string; title: string; prompt: string }) => Promise<{ ok: true } | { error: string }>
     reset: (id: string) => Promise<{ ok: true } | { error: string }>
     script: (id: string) => Promise<{ path: string; body: string } | null>
+    state: (id: string) => Promise<{ path: string; exists: boolean; state: AgentStateRecord }>
+    stateReset: (id: string) => Promise<{ ok: true } | { error: string }>
     convert: (id: string) => Promise<{ ok: true; scriptPath: string; sidecarPath: string } | { error: string }>
     design: (text: string, engine: Engine, scope: 'repo' | 'global', model?: string) =>
       Promise<AgentRun | { error: string }>

@@ -52,6 +52,8 @@ const gt = {
     save: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
     reset: (id: string) => ipcRenderer.invoke('agents:reset', id),
     script: (id: string) => ipcRenderer.invoke('agents:script', id),
+    state: (id: string) => ipcRenderer.invoke('agents:state', id),
+    stateReset: (id: string) => ipcRenderer.invoke('agents:state-reset', id),
     convert: (id: string) => ipcRenderer.invoke('agents:convert', id),
     design: (text: string, engine: string, scope: 'repo' | 'global', model?: string) =>
       ipcRenderer.invoke('agents:design', text, engine, scope, model),
