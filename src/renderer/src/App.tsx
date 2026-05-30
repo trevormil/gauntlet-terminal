@@ -95,19 +95,17 @@ export default function App() {
   }, [sessions.length])
   const statusByKey = Object.fromEntries(fleetData.map((f) => [f.key, f.status]))
 
-  // select a session: tell main FIRST and await confirmation, THEN flip the
-  // active key locally. Awaiting kills a React effect-ordering race — child
-  // effects in the newly-active SessionView fire only after main's cur() has
-  // been updated, so they never briefly read the previously-active session's
-  // repo/branch. (Replaces a redundant useEffect on [activeKey] that double-
-  // fired setActiveSession and could race child effects.)
-  const activate = async (key: string) => {
-    try {
-      await window.gt.setActiveSession(key)
-    } catch {
-      /* main rejected (e.g. session removed) — fall through and flip locally */
-    }
+  // Fire the IPC immediately AND flip activeKey in the same tick. Main
+  // processes IPCs FIFO — so any tabContext / tick / data IPC the newly-active
+  // SessionView fires next will see the post-setActiveSession cur(). The old
+  // await pattern (await IPC → setActiveKey) made switching feel sluggish
+  // because the visibility flip waited for the IPC roundtrip; dropping the
+  // await keeps the visual swap snappy without introducing a real race.
+  const activate = (key: string) => {
     setActiveKey(key)
+    window.gt.setActiveSession(key).catch(() => {
+      /* main rejected (e.g. session removed) — UI already flipped, accept */
+    })
   }
 
   const addSession = (choice: Choice) => {
@@ -131,6 +129,10 @@ export default function App() {
   }
   const setInfo = (key: string, info: Info) =>
     setSessions((s) => s.map((x) => (x.key === key ? { ...x, info } : x)))
+  const renameSession = (key: string, name: string) =>
+    setSessions((s) =>
+      s.map((x) => (x.key === key ? { ...x, choice: { ...x.choice, name } } : x)),
+    )
 
   // Group sessions by repo root so the top bar can render workspace pills.
   // We key on cwd verbatim — two sessions at the same path are siblings, two
@@ -148,6 +150,25 @@ export default function App() {
     const s = sessions.find((x) => x.key === activeKey)
     return s ? cwdOf(s) : ''
   }, [sessions, activeKey])
+
+  // Pre-compute peer-session lists ONCE per workspace, then look up by session
+  // key in the map. Without this, every App re-render (every fleet tick, every
+  // status-by-key change) generates a fresh peerSessions array for each
+  // SessionView prop, which makes React see "new" props on every render and
+  // bypass any downstream memoization in SessionView.
+  const peersByKey = useMemo(() => {
+    const m = new Map<string, { key: string; label: string; status: string; mode: 'new' | 'resume' }[]>()
+    for (const ws of workspaces) {
+      const peers = ws.sessions.map((x, i) => ({
+        key: x.key,
+        label: labelForSession(x, i),
+        status: statusByKey[x.key] || 'idle',
+        mode: x.choice.mode,
+      }))
+      for (const s of ws.sessions) m.set(s.key, peers)
+    }
+    return m
+  }, [workspaces, statusByKey])
 
   const closeWorkspace = (root: string) => {
     const ws = workspaces.find((w) => w.repoRoot === root)
@@ -296,16 +317,7 @@ export default function App() {
           stay mounted and their ptys aren't respawned. */}
       <div className="relative min-h-0 flex-1">
         {sessions.map((s) => {
-          // Workspace sessions for the sub-bar — each SessionView gets the
-          // peer list for ITS workspace so the Terminal-tab session selector
-          // can render without round-tripping through App.
-          const ws = workspaces.find((w) => w.sessions.some((x) => x.key === s.key))
-          const peers = (ws?.sessions || [s]).map((x, i) => ({
-            key: x.key,
-            label: labelForSession(x, i),
-            status: statusByKey[x.key] || 'idle',
-            mode: x.choice.mode,
-          }))
+          const peers = peersByKey.get(s.key)
           return (
             <div
               key={s.key}
@@ -319,8 +331,9 @@ export default function App() {
                 onStarted={(i) => setInfo(s.key, i)}
                 peerSessions={peers}
                 onSwitchSession={activate}
-                onAddSession={() => setAdding({ repoRoot: ws?.repoRoot || s.choice.cwd || '' })}
+                onAddSession={() => setAdding({ repoRoot: cwdOf(s) || '' })}
                 onCloseSession={closeSession}
+                onRenameSession={renameSession}
               />
             </div>
           )

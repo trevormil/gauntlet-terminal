@@ -40,6 +40,7 @@ export function SessionView({
   onSwitchSession,
   onAddSession,
   onCloseSession,
+  onRenameSession,
 }: {
   sessionKey: string
   choice: Choice
@@ -52,8 +53,13 @@ export function SessionView({
   onSwitchSession?: (key: string) => void
   onAddSession?: () => void
   onCloseSession?: (key: string) => void
+  onRenameSession?: (key: string, name: string) => void
 }) {
   const [info, setInfo] = useState<Info>({ sessionId: '', cwd: '' })
+  // Inline rename in the session sub-bar — null when not editing, otherwise
+  // the peer key being edited.
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState('')
   const [branch, setBranch] = useState('')
   const [ctx, setCtx] = useState<TabContext | null>(null)
   const [activeTab, setActiveTab] = useState('terminal')
@@ -165,7 +171,10 @@ export function SessionView({
     setEnabled((e) => (e.includes(id) ? e.filter((x) => x !== id) : [...e, id]))
   const activeWidgets = allPlugins.filter((p) => enabled.includes(p.id))
   const ActiveTab = tabs.find((t) => t.id === activeTab)
-  const onTerminal = !ActiveTab
+  // Direct check rather than `!ActiveTab`. The latter is also true while
+  // `tabs` is empty during ctx loading — a transient state that briefly
+  // un-hid the terminal pane mid-tab-switch.
+  const onTerminal = activeTab === 'terminal'
 
   const tabPill = (id: string, Icon: LucideIcon, label: string) => {
     const count = tabBadges[id]
@@ -243,7 +252,12 @@ export function SessionView({
           className="absolute inset-0 grid"
           style={{
             gridTemplateColumns: 'minmax(0,1fr) 320px',
-            visibility: onTerminal ? 'visible' : 'hidden',
+            // Hide ONLY when on a non-terminal tab. Don't force 'visible' —
+            // that would override the App-level wrapper's `visibility: hidden`
+            // for inactive sessions, leaking the inactive session's terminal
+            // pane onto whichever tab the ACTIVE session is showing (the
+            // "weird navigation glitch" — see screenshot).
+            visibility: onTerminal ? undefined : 'hidden',
           }}
         >
           <main className="flex min-w-0 flex-col overflow-hidden bg-[var(--gt-bg)]">
@@ -257,11 +271,18 @@ export function SessionView({
                 </span>
                 {peerSessions.map((p) => {
                   const on = p.key === sessionKey
+                  const isEditing = editingKey === p.key
                   return (
-                    <button
+                    <div
                       key={p.key}
-                      onClick={() => p.key !== sessionKey && onSwitchSession?.(p.key)}
-                      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 ${
+                      onClick={() => !isEditing && p.key !== sessionKey && onSwitchSession?.(p.key)}
+                      onDoubleClick={() => {
+                        if (!onRenameSession) return
+                        setEditingKey(p.key)
+                        setEditingValue(p.label)
+                      }}
+                      title="Double-click to rename"
+                      className={`flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 ${
                         on
                           ? 'bg-[var(--gt-accent)]/25 text-zinc-100'
                           : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
@@ -277,8 +298,32 @@ export function SessionView({
                               : 'bg-[var(--gt-accent-2)]'
                         }`}
                       />
-                      <span className="max-w-[140px] truncate">{p.label}</span>
-                      {peerSessions.length > 1 && onCloseSession && (
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={() => {
+                            onRenameSession?.(p.key, editingValue.trim())
+                            setEditingKey(null)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              onRenameSession?.(p.key, editingValue.trim())
+                              setEditingKey(null)
+                            } else if (e.key === 'Escape') {
+                              setEditingKey(null)
+                            }
+                            e.stopPropagation()
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          spellCheck={false}
+                          className="w-24 rounded-sm border border-[var(--gt-accent)]/60 bg-black/40 px-1 py-px text-[11px] text-zinc-100 outline-none"
+                        />
+                      ) : (
+                        <span className="max-w-[140px] truncate">{p.label}</span>
+                      )}
+                      {peerSessions.length > 1 && onCloseSession && !isEditing && (
                         <span
                           onClick={(e) => {
                             e.stopPropagation()
@@ -290,7 +335,7 @@ export function SessionView({
                           <X size={10} strokeWidth={2.5} />
                         </span>
                       )}
-                    </button>
+                    </div>
                   )
                 })}
                 {onAddSession && (
