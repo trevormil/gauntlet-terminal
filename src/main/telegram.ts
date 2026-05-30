@@ -196,6 +196,10 @@ function cmdHelp() {
       '/bg [@repo] [claude|codex] [model] <prompt>',
       '/bg list · /bg cancel <n|id>',
       '',
+      'BUDGETS',
+      '/budget · /budget set <usd> · /budget set <agent> <usd>',
+      '/budget override <Nh|Nm|clear>',
+      '',
       'INFRASTRUCTURE',
       '/sessions · /tail <id|n> · /rebuild · /about',
       '/install <agent> [@repo]   copy from project-template',
@@ -649,6 +653,63 @@ function cmdInstall(args: string[]) {
   }
 }
 
+// --- /budget cap + override ------------------------------------------------
+
+function cmdBudget(args: string[]) {
+  const { readBudgets, setDailyCap, setAgentCap, setOverride } = require('./budgets') as typeof import('./budgets')
+  const sub = args[0]?.toLowerCase()
+  if (!sub) {
+    const b = readBudgets()
+    const { summaryFor } = require('./ai-runs') as typeof import('./ai-runs')
+    const s = summaryFor('today')
+    const lines = [
+      `💰 Budget`,
+      `today: $${s.totalUsd.toFixed(2)}${b.dailyTotalUsd > 0 ? ` / $${b.dailyTotalUsd.toFixed(2)} (${Math.round((s.totalUsd / b.dailyTotalUsd) * 100)}%)` : ' (no cap)'}`,
+    ]
+    if (Object.keys(b.perAgent).length) {
+      lines.push('per-agent caps:')
+      for (const [a, c] of Object.entries(b.perAgent)) {
+        const spent = s.byAgent[a]?.usd || 0
+        lines.push(`  ${a}: $${spent.toFixed(2)} / $${c.toFixed(2)}`)
+      }
+    }
+    if (b.overrideUntil && b.overrideUntil > Date.now()) {
+      const mins = Math.round((b.overrideUntil - Date.now()) / 60_000)
+      lines.push(`override active for ${mins}m`)
+    }
+    return reply(lines.join('\n'))
+  }
+  if (sub === 'set') {
+    const t1 = args[1]
+    const t2 = args[2]
+    // /budget set 25         — daily cap
+    // /budget set docs 5     — per-agent cap
+    const usd = parseFloat(t2 || t1 || '')
+    if (!Number.isFinite(usd)) return reply('Usage: /budget set <usd>  ·  /budget set <agent> <usd>')
+    if (t2) {
+      setAgentCap(t1, usd)
+      return reply(`✓ ${t1} cap set to $${usd.toFixed(2)}/day`)
+    }
+    setDailyCap(usd)
+    return reply(`✓ daily cap set to $${usd.toFixed(2)}`)
+  }
+  if (sub === 'override') {
+    // /budget override 2h  or  /budget override clear
+    const dur = args[1] || '1h'
+    if (dur === 'clear' || dur === '0') {
+      setOverride(0)
+      return reply('✓ override cleared')
+    }
+    const m = dur.match(/^(\d+)([hm])?$/)
+    if (!m) return reply('Usage: /budget override <Nh|Nm|clear>')
+    const n = parseInt(m[1], 10)
+    const ms = (m[2] === 'm' ? n * 60_000 : n * 3_600_000)
+    setOverride(ms)
+    return reply(`✓ override active for ${dur}`)
+  }
+  reply('Usage: /budget · /budget set <usd> · /budget set <agent> <usd> · /budget override <Nh>')
+}
+
 // --- /bg fire and forget ---------------------------------------------------
 //
 // Spawns a detached agent in a worktree-scoped run. End-of-run watcher pings
@@ -864,6 +925,8 @@ function handle(text: string) {
       return cmdInstall(args)
     case '/bg':
       return cmdBg(args)
+    case '/budget':
+      return cmdBudget(args)
     default:
       return reply(`Unknown command ${cmd}. Send /help.`)
   }

@@ -666,6 +666,24 @@ export type GtApi = {
     }[]>
     models: () => Promise<string[]>
   }
+  budgets: {
+    get: () => Promise<{
+      dailyTotalUsd: number
+      perAgent: Record<string, number>
+      warnAt: number[]
+      overrideUntil: number | null
+    }>
+    setDaily: (usd: number) => Promise<unknown>
+    setAgent: (agentId: string, usd: number) => Promise<unknown>
+    override: (durationMs: number) => Promise<unknown>
+    gate: (agentId?: string) => Promise<{
+      decision: 'allow' | 'warn' | 'refuse'
+      reason?: string
+      spentTodayUsd: number
+      capRemainingUsd: number
+      capUsd: number
+    }>
+  }
   bg: {
     list: () => Promise<BgTask[]>
     get: (id: string) => Promise<BgTask | null>

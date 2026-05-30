@@ -104,6 +104,14 @@ import { startAICollectionLoop } from './ai-collectors'
 import { knownModels } from './ai-pricing'
 import { startMenuBar } from './tray'
 import {
+  readBudgets,
+  setDailyCap,
+  setAgentCap,
+  setOverride,
+  gateSpawn,
+  startBudgetWatcher,
+} from './budgets'
+import {
   spawnBgTask,
   listBgTasks,
   getBgTask,
@@ -875,6 +883,13 @@ ipcMain.handle(
 )
 ipcMain.handle('bg:cancel', (_e, id: string) => cancelBgTask(id))
 
+// Budget IPCs (#0002).
+ipcMain.handle('budgets:get', () => readBudgets())
+ipcMain.handle('budgets:setDaily', (_e, usd: number) => setDailyCap(usd))
+ipcMain.handle('budgets:setAgent', (_e, agentId: string, usd: number) => setAgentCap(agentId, usd))
+ipcMain.handle('budgets:override', (_e, durationMs: number) => setOverride(durationMs))
+ipcMain.handle('budgets:gate', (_e, agentId?: string) => gateSpawn(agentId))
+
 // AI fleet observability IPCs. Pull from the per-run AI ledger.
 ipcMain.handle('observability:summary', (_e, range: Range = 'today') => summaryFor(range))
 ipcMain.handle('observability:byAgent', (_e, range: Range = 'week') => agentROI(range))
@@ -991,6 +1006,8 @@ app.whenReady().then(() => {
   // Background-task watcher (#0004) — reconciles bg-tasks.json state with
   // actual PIDs, sweeps completed tasks, fires Telegram pings on MR ready.
   startBgWatcher()
+  // Budget watcher — fires HITL pings at warnAt thresholds.
+  startBudgetWatcher()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -95,6 +95,19 @@ export type SpawnBgInput = {
 export function spawnBgTask(input: SpawnBgInput): BgTask | { error: string } {
   if (!input.repoRoot || !existsSync(input.repoRoot)) return { error: 'invalid repoRoot' }
   if (!input.prompt?.trim()) return { error: 'empty prompt' }
+  // Budget gate — refuse new spawns when daily cap is reached. Mid-turn
+  // runs continue normally; only NEW background tasks are gated.
+  try {
+    const { gateSpawn } = require('./budgets') as typeof import('./budgets')
+    const gate = gateSpawn('bg-task')
+    if (gate.decision === 'refuse') {
+      return {
+        error: `budget gate refused: ${gate.reason}. Set /budget override or raise the cap.`,
+      }
+    }
+  } catch {
+    /* budget module unavailable — fall through and allow */
+  }
 
   ensure()
   const id = randomUUID()

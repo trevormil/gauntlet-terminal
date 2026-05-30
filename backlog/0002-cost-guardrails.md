@@ -1,7 +1,7 @@
 ---
 id: 2
 title: "Cost guardrails: daily budget + spawn-gate + per-agent caps"
-status: open
+status: closed
 priority: high
 horizon: next
 hitl: false

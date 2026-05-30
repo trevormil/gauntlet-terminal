@@ -51,18 +51,21 @@ function ObservabilityTab(_props: { ctx: TabContext }) {
   const [byAgent, setByAgent] = useState<Awaited<ReturnType<typeof window.gt.observability.byAgent>> | null>(null)
   const [daily, setDaily] = useState<Awaited<ReturnType<typeof window.gt.observability.daily>> | null>(null)
   const [runs, setRuns] = useState<Awaited<ReturnType<typeof window.gt.observability.runs>> | null>(null)
+  const [budgets, setBudgets] = useState<Awaited<ReturnType<typeof window.gt.budgets.get>> | null>(null)
 
   const reload = async () => {
-    const [s, a, d, r] = await Promise.all([
+    const [s, a, d, r, b] = await Promise.all([
       window.gt.observability.summary(range),
       window.gt.observability.byAgent(range),
       window.gt.observability.daily(14),
       window.gt.observability.runs(100),
+      window.gt.budgets.get(),
     ])
     setSummary(s)
     setByAgent(a)
     setDaily(d)
     setRuns(r)
+    setBudgets(b)
   }
 
   useEffect(() => {
@@ -137,6 +140,81 @@ function ObservabilityTab(_props: { ctx: TabContext }) {
             )
           })()}
         </div>
+
+        {/* Budget card — only when caps are set or the user wants to set them */}
+        <section className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)]/40 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Budget</span>
+            {budgets?.overrideUntil && budgets.overrideUntil > Date.now() && (
+              <span className="rounded-md border border-[var(--gt-yellow)]/40 bg-[var(--gt-yellow)]/10 px-1.5 py-0.5 text-[10px] text-[var(--gt-yellow)]">
+                override active
+              </span>
+            )}
+          </div>
+          {budgets ? (
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                {budgets.dailyTotalUsd > 0 ? (
+                  <>
+                    <div className="mb-1 flex items-baseline gap-1 text-[12px]">
+                      <span className="font-mono tabular-nums text-zinc-200">
+                        {fmtUsd(summary?.totalUsd || 0)}
+                      </span>
+                      <span className="text-zinc-600">/ {fmtUsd(budgets.dailyTotalUsd)}</span>
+                      <span className="ml-auto text-[10.5px] tabular-nums text-zinc-500">
+                        {Math.round(((summary?.totalUsd || 0) / budgets.dailyTotalUsd) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-black/30">
+                      <div
+                        className={`h-full ${
+                          (summary?.totalUsd || 0) >= budgets.dailyTotalUsd
+                            ? 'bg-[var(--gt-red)]'
+                            : (summary?.totalUsd || 0) >= budgets.dailyTotalUsd * 0.8
+                              ? 'bg-[var(--gt-yellow)]'
+                              : 'bg-[var(--gt-green)]'
+                        }`}
+                        style={{
+                          width: `${Math.min(100, ((summary?.totalUsd || 0) / budgets.dailyTotalUsd) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-zinc-500">No daily cap set</div>
+                )}
+              </div>
+              <button
+                onClick={async () => {
+                  const v = prompt('Daily budget cap (USD, 0 to disable):', String(budgets.dailyTotalUsd || 0))
+                  if (v === null) return
+                  const n = parseFloat(v)
+                  if (!Number.isFinite(n) || n < 0) return
+                  await window.gt.budgets.setDaily(n)
+                  reload()
+                }}
+                className="shrink-0 rounded-md border border-[var(--gt-border)] px-2 py-0.5 text-[10.5px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+              >
+                set cap
+              </button>
+              <button
+                onClick={async () => {
+                  if (budgets.overrideUntil && budgets.overrideUntil > Date.now()) {
+                    await window.gt.budgets.override(0)
+                  } else {
+                    await window.gt.budgets.override(60 * 60 * 1000)
+                  }
+                  reload()
+                }}
+                className="shrink-0 rounded-md border border-[var(--gt-border)] px-2 py-0.5 text-[10.5px] text-zinc-300 hover:border-[var(--gt-accent)]/60"
+              >
+                {budgets.overrideUntil && budgets.overrideUntil > Date.now() ? 'clear override' : 'override 1h'}
+              </button>
+            </div>
+          ) : (
+            <div className="text-[11px] text-zinc-600">loading…</div>
+          )}
+        </section>
 
         {/* Daily spend chart */}
         <section className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)]/40 p-3">
