@@ -6,7 +6,7 @@ import { telegramControlEnabled, readSettings } from './settings'
 import { readAgents, runAgent, listRuns, cancelRun, readAgentState, resetAgentState } from './agents'
 import { readPersonas } from './personas'
 import { parseCommand, classifyRunArgs, parsePollLine } from './telegram-parse'
-import { sendUrl, getUpdatesUrl, parseUpdates } from './telegram-api'
+import { sendUrl, getUpdatesUrl, parseUpdates, answerCallbackUrl, type TgInlineKeyboard } from './telegram-api'
 import { listTickets, createTicket, updateTicket, getTicket } from './backlog'
 import { readHitl, resolveHitl } from './hitl'
 import { readSchedules } from './schedules'
@@ -91,19 +91,37 @@ function knownRepos(): RepoCtx[] {
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
 
-/** Send a message — native Bot API when configured, else the legacy script. */
-function reply(text: string) {
+/** Send a message — native Bot API when configured, else the legacy script.
+ *  When `buttons` is supplied AND the native API is in use, attaches an
+ *  inline keyboard (taps surface as callback_query updates which the poll
+ *  loop routes via dispatchCallback). */
+function reply(text: string, buttons?: TgInlineKeyboard) {
   const t = readSettings().telegram
   if (t.botToken && t.chatId) {
+    const body: Record<string, unknown> = { chat_id: t.chatId, text }
+    if (buttons && buttons.length) body.reply_markup = { inline_keyboard: buttons }
     fetch(sendUrl(t.botToken), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: t.chatId, text }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     }).catch(() => {})
     return
   }
   if (existsSync(NOTIFY)) execFile(NOTIFY, [text], () => {})
+}
+
+/** Ack the callback query so the user's button stops spinning. Pass an optional
+ *  short `text` for a transient toast (max 200 chars per the Bot API). */
+function ack(queryId: string, text?: string) {
+  const t = readSettings().telegram
+  if (!t.botToken || !queryId) return
+  fetch(answerCallbackUrl(t.botToken), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: queryId, ...(text ? { text } : {}) }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {})
 }
 
 let enabledAt = 0 // legacy-script path: ignore lines older than enable time
@@ -173,6 +191,10 @@ function cmdHelp() {
       '',
       'MRS · ACTIVITY · HARNESS',
       '/mrs [@repo] · /mr <iid> · /activity [N] · /harness · /status',
+      '',
+      'INFRASTRUCTURE',
+      '/sessions · /tail <id|n> · /rebuild · /about',
+      '/install <agent> [@repo]   copy from project-template',
     ].join('\n'),
   )
 }
@@ -482,6 +504,147 @@ function cmdResetState(args: string[]) {
   reply(`🧹 Reset state · ${agentId} · ${repo.label}.`)
 }
 
+// --- runs: tail recent log lines -------------------------------------------
+
+let lastRunIdsTail: string[] = [] // numeric-index → runId for /tail <n>
+
+function tailRun(runIdOrToken: string) {
+  // Accept full id, an "n" from the last /runs/listing, or a prefix.
+  let runId = runIdOrToken
+  const n = parseInt(runIdOrToken, 10)
+  if (n && lastRunIds[n - 1]) runId = lastRunIds[n - 1]
+  else if (n && lastRunIdsTail[n - 1]) runId = lastRunIdsTail[n - 1]
+  // Try the cron-runs log file first (the canonical log for cron + the
+  // path /tail can serve without holding state from in-process runs).
+  const cronLog = join(homedir(), '.config', 'TerMinal', 'cron-runs', `${runId}.log`)
+  let text = ''
+  if (existsSync(cronLog)) {
+    try {
+      text = readFileSync(cronLog, 'utf8')
+    } catch {
+      /* fall through to in-process */
+    }
+  }
+  if (!text) {
+    const r = listRuns().find((x) => x.id === runId || x.id.startsWith(runId))
+    if (r) text = r.output || '(no output yet)'
+  }
+  if (!text) return reply(`No log for ${runId.slice(0, 8)} (run not found)`)
+  // Strip ANSI + keep last 30 lines so the message fits comfortably in a
+  // Telegram bubble (4096-char limit; 30 lines = usually <2k chars).
+  const lines = text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').split('\n')
+  const tail = lines.slice(-30).join('\n')
+  reply(`🪵 tail · ${runId.slice(0, 8)}\n\n${tail}`)
+}
+
+function cmdTail(args: string[]) {
+  if (!args[0]) return reply('Usage: /tail <runId|n>')
+  tailRun(args[0])
+}
+
+// --- /sessions -------------------------------------------------------------
+
+function cmdSessions() {
+  const repos = getRepos()
+  if (!repos.length) return reply('No open terminal sessions.')
+  const active = getActive()
+  reply(
+    'Open sessions:\n' +
+      repos
+        .map(
+          (r) =>
+            `• ${r.label}${active && r.repoRoot === active.repoRoot ? ' (active)' : ''}`,
+        )
+        .join('\n'),
+  )
+}
+
+// --- /about ----------------------------------------------------------------
+
+function cmdAbout() {
+  reply(
+    [
+      '🖥 TerMinal',
+      `repos known: ${knownRepos().length} (${getRepos().length} open)`,
+      `runs in-process: ${listRuns().length} total · ${listRuns().filter((r) => r.status === 'running').length} live`,
+      `node ${process.version} · platform ${process.platform}`,
+      `cwd: ${process.cwd()}`,
+    ].join('\n'),
+  )
+}
+
+// --- /rebuild --------------------------------------------------------------
+
+let rebuildPid: number | null = null
+function cmdRebuild() {
+  if (rebuildPid) {
+    try {
+      process.kill(rebuildPid, 0)
+      return reply('⚠️ Rebuild already running.')
+    } catch {
+      rebuildPid = null
+    }
+  }
+  // Resolve the source checkout the same way the Settings panel does.
+  const candidates = [
+    process.env.GT_TERMINAL_REPO || '',
+    process.cwd(),
+    join(homedir(), 'CompSci', 'gauntlet', 'TerMinal'),
+  ].filter(Boolean)
+  let repoRoot = ''
+  for (const c of candidates) {
+    if (existsSync(join(c, 'bin', 'release'))) {
+      repoRoot = c
+      break
+    }
+  }
+  if (!repoRoot) {
+    return reply('⛔ bin/release not found — set GT_TERMINAL_REPO or run from the source checkout.')
+  }
+  reply('🔧 Rebuild kicked off — app will quit + relaunch when bin/release finishes.')
+  // Detached child outlives the parent the script kills mid-flow. We don't
+  // tail the log here — Telegram is chat, not a build console; the user can
+  // /tail it from a re-launched app if they want to see it.
+  try {
+    const child = execFile(
+      'bin/release',
+      [],
+      { cwd: repoRoot, env: process.env },
+      () => {
+        rebuildPid = null
+      },
+    )
+    rebuildPid = child.pid || null
+  } catch (e) {
+    rebuildPid = null
+    reply(`⛔ rebuild failed to start: ${(e as Error).message}`)
+  }
+}
+
+// --- /install <agent> ------------------------------------------------------
+
+function cmdInstall(args: string[]) {
+  const agentId = args[0]
+  if (!agentId) return reply('Usage: /install <agent> [@repo]')
+  const repo = resolveRepo(args[1])
+  if (!repo) return reply('No repo — /repos to list.')
+  // Source: project-template's .agents/<id>.sh + sidecar JSON.
+  const templateRoot = join(homedir(), 'CompSci', 'gauntlet', 'project-template')
+  const srcSh = join(templateRoot, '.agents', `${agentId}.sh`)
+  const srcJson = join(templateRoot, '.agents', `${agentId}.json`)
+  if (!existsSync(srcSh)) return reply(`No ${agentId}.sh in project-template/.agents.`)
+  const dstDir = join(repo.repoRoot, '.agents')
+  try {
+    mkdirSync(dstDir, { recursive: true })
+    writeFileSync(join(dstDir, `${agentId}.sh`), readFileSync(srcSh, 'utf8'), { mode: 0o755 })
+    if (existsSync(srcJson))
+      writeFileSync(join(dstDir, `${agentId}.json`), readFileSync(srcJson, 'utf8'))
+    reply(`📦 Installed ${agentId} into ${repo.label}/.agents/`)
+  } catch (e) {
+    reply(`⛔ install failed: ${(e as Error).message}`)
+  }
+}
+
 // --- harness + activity ----------------------------------------------------
 
 function cmdHarness() {
@@ -590,13 +753,85 @@ function handle(text: string) {
       return cmdHarness()
     case '/activity':
       return cmdActivity(args)
+    case '/sessions':
+      return cmdSessions()
+    case '/tail':
+      return cmdTail(args)
+    case '/rebuild':
+      return cmdRebuild()
+    case '/about':
+    case '/whoami':
+      return cmdAbout()
+    case '/install':
+      return cmdInstall(args)
     default:
       return reply(`Unknown command ${cmd}. Send /help.`)
   }
 }
 
+// Inline-button callback dispatcher. Callback data is small (max 64 bytes per
+// the Bot API), so we use a colon-delimited scheme:
+//   hitl:resolve:<hitlId>
+//   hitl:reopen:<hitlId>
+//   run:tail:<runId>
+//   sched:pause:<id> · sched:resume:<id> · sched:runnow:<id>
+//   ticket:close:<slug>
+// Anything unrecognized acks and replies with a one-liner.
+async function dispatchCallback(data: string, queryId: string) {
+  const [domain, action, ...rest] = data.split(':')
+  const id = rest.join(':')
+  try {
+    if (domain === 'hitl' && action === 'resolve') {
+      const ok = resolveHitl(id, true)
+      ack(queryId, ok ? 'Resolved' : 'Not found')
+      reply(ok ? `☑️ Resolved HITL ${id.slice(0, 8)}` : `Could not resolve ${id.slice(0, 8)}`)
+      return
+    }
+    if (domain === 'hitl' && action === 'reopen') {
+      const ok = resolveHitl(id, false)
+      ack(queryId, ok ? 'Reopened' : 'Not found')
+      reply(ok ? `↺ Reopened HITL ${id.slice(0, 8)}` : `Could not reopen ${id.slice(0, 8)}`)
+      return
+    }
+    if (domain === 'run' && action === 'tail') {
+      ack(queryId)
+      tailRun(id)
+      return
+    }
+    if (domain === 'run' && action === 'cancel') {
+      const ok = cancelRun(id)
+      ack(queryId, ok ? 'Canceled' : 'Not running')
+      reply(ok ? `⏹ Canceled ${id.slice(0, 8)}` : `Run ${id.slice(0, 8)} not running`)
+      return
+    }
+    if (domain === 'sched' && (action === 'pause' || action === 'resume')) {
+      setDisabled(id, action === 'pause')
+      const s = readSchedules(Date.now()).find((x) => x.id === id)
+      ack(queryId, action === 'pause' ? 'Paused' : 'Resumed')
+      reply(`${action === 'pause' ? '⏸ paused' : '▶️ resumed'} · ${s?.agentTitle || id.slice(0, 8)}`)
+      return
+    }
+    if (domain === 'sched' && action === 'runnow') {
+      const s = readSchedules(Date.now()).find((x) => x.id === id)
+      if (!s) {
+        ack(queryId, 'Unknown')
+        return
+      }
+      const r = runAgent(s.repoRoot, s.agentId, s.engine)
+      ack(queryId, 'error' in r ? r.error : 'Triggered')
+      if ('error' in r) reply(`⛔ ${r.error}`)
+      else reply(`▶️ Triggered ${s.agentTitle} · ${s.repoLabel}`)
+      return
+    }
+    ack(queryId, 'Unknown action')
+  } catch (e) {
+    ack(queryId, 'error')
+    reply(`⛔ callback error: ${(e as Error).message}`)
+  }
+}
+
 let polling = false
-/** One poll cycle — fetch new inbound messages and dispatch any commands.
+/** One poll cycle — fetch new inbound messages + callback taps and dispatch.
  *  No-ops cheaply when control is off, so it's safe to call on a fixed timer. */
 export async function pollTelegramOnce() {
   if (polling || !telegramControlEnabled()) return
@@ -606,9 +841,10 @@ export async function pollTelegramOnce() {
     try {
       const res = await fetch(getUpdatesUrl(t.botToken, readOffset()), { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
-        const { messages, nextOffset } = parseUpdates(await res.json(), t.chatId)
+        const { messages, callbacks, nextOffset } = parseUpdates(await res.json(), t.chatId)
         if (nextOffset) writeOffset(nextOffset)
         for (const m of messages) handle(m.text)
+        for (const c of callbacks) await dispatchCallback(c.data, c.queryId)
       }
     } catch {
       /* network — retry next tick */

@@ -30,15 +30,33 @@ function tgKind(ev: ActivityEvent): 'done' | 'blocked' | 'info' {
 }
 const KIND_EMOJI: Record<'done' | 'blocked' | 'info', string> = { done: '✅', blocked: '⛔', info: 'ℹ️' }
 
+// Compose the inline-keyboard for an event. HITL filings get [Resolve] and,
+// when a runId is known, [View run] (callback → tail log). Other events get
+// no buttons — chat plays back as plain notifications.
+function buttonsFor(ev: ActivityEvent): unknown[][] | null {
+  if (ev.kind !== 'blocked' || !ev.hitlId) return null
+  const row: { text: string; callback_data: string }[] = [
+    { text: '✅ Resolve', callback_data: `hitl:resolve:${ev.hitlId}` },
+  ]
+  if (ev.runId) row.push({ text: '🪵 Tail run', callback_data: `run:tail:${ev.runId}` })
+  return [row]
+}
+
 function sendTelegram(ev: ActivityEvent) {
   if (!telegramNotifyEnabled()) return // opt-in, off by default
   const { telegram } = readSettings()
   const msg = ev.detail ? `${ev.title} — ${ev.detail}` : ev.title
   if (telegram.botToken && telegram.chatId) {
+    const buttons = buttonsFor(ev)
+    const body: Record<string, unknown> = {
+      chat_id: telegram.chatId,
+      text: `${KIND_EMOJI[tgKind(ev)]} ${msg}`,
+    }
+    if (buttons) body.reply_markup = { inline_keyboard: buttons }
     fetch(sendUrl(telegram.botToken), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: telegram.chatId, text: `${KIND_EMOJI[tgKind(ev)]} ${msg}` }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     }).catch(() => {}) // best effort
     return
@@ -95,6 +113,10 @@ export type ActivityEvent = {
   // event in the Activity tab can jump to that run's log in the Runs tab.
   runId?: string
   runSource?: 'cron' | 'agent'
+  // Set when the event is a HITL filing — drives the inline Telegram buttons
+  // ([Resolve] / [View run]) so the user can act from the chat without
+  // having to text /hitl + /resolve.
+  hitlId?: string
 }
 
 // which kinds raise a macOS/Telegram notification (vs. log-only feed context).

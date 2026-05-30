@@ -71,10 +71,21 @@ function alwaysPingTelegram(item: HitlItem): void {
     const { telegram } = readSettings()
     const msg = `⛔ HITL · ${item.title}${item.action ? ` — ${item.action}` : ''}`
     if (telegram.botToken && telegram.chatId) {
+      // Inline [Resolve] (always) + [Tail run] (when we know the run id) so
+      // the chat ping is one-tap actionable instead of "now go open the app
+      // and click Resolve."
+      const row: { text: string; callback_data: string }[] = [
+        { text: '✅ Resolve', callback_data: `hitl:resolve:${item.id}` },
+      ]
+      if (item.runId) row.push({ text: '🪵 Tail run', callback_data: `run:tail:${item.runId}` })
       fetch(sendUrl(telegram.botToken), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: telegram.chatId, text: msg }),
+        body: JSON.stringify({
+          chat_id: telegram.chatId,
+          text: msg,
+          reply_markup: { inline_keyboard: [row] },
+        }),
         signal: AbortSignal.timeout(8000),
       }).catch(() => {})
       return
@@ -97,6 +108,11 @@ export function fileHitl(input: Omit<HitlItem, 'id' | 'status' | 'createdAt'>): 
       detail: item.action || item.detail,
       repo: item.repo,
       repoRoot: item.repoRoot,
+      // Drive the [Resolve] / [Tail run] inline-button rendering in
+      // events.ts buttonsFor — without these, the TG ping is plain text.
+      hitlId: item.id,
+      runId: item.runId,
+      runSource: item.runSource,
     },
     { notify: true },
   )

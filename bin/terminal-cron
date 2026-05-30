@@ -128,13 +128,22 @@ function fileHitl(item) {
   try {
     // HITL ALWAYS pings Telegram when bot+chat configured, regardless of the
     // general activity-feed `telegram.notify` toggle. HITL is by definition the
-    // "I need attention" channel; never silence it.
+    // "I need attention" channel; never silence it. Include inline
+    // [Resolve] / [Tail run] buttons so the chat ping is one-tap actionable;
+    // the in-app poll loop dispatches callback_query taps back to
+    // resolveHitl + tailRun.
     const t = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'))?.telegram
     if (t?.botToken && t?.chatId) {
+      const row = [{ text: '✅ Resolve', callback_data: `hitl:resolve:${rec.id}` }]
+      if (item.runId) row.push({ text: '🪵 Tail run', callback_data: `run:tail:${item.runId}` })
       fetch(`https://api.telegram.org/bot${t.botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: t.chatId, text: `⛔ HITL · ${item.title}${item.action ? ` — ${item.action}` : ''}` }),
+        body: JSON.stringify({
+          chat_id: t.chatId,
+          text: `⛔ HITL · ${item.title}${item.action ? ` — ${item.action}` : ''}`,
+          reply_markup: { inline_keyboard: [row] },
+        }),
         signal: AbortSignal.timeout(8000),
       }).catch(() => {})
     }

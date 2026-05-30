@@ -6,8 +6,14 @@ describe('url builders', () => {
     expect(sendUrl('123:ABC')).toBe('https://api.telegram.org/bot123:ABC/sendMessage')
   })
   test('getUpdatesUrl with/without offset', () => {
-    expect(getUpdatesUrl('T', 0)).toBe('https://api.telegram.org/botT/getUpdates?timeout=0')
-    expect(getUpdatesUrl('T', 42)).toBe('https://api.telegram.org/botT/getUpdates?offset=42&timeout=0')
+    // allowed_updates is appended to opt into callback_query taps; offset is
+    // present only when ack-ing past prior updates.
+    expect(getUpdatesUrl('T', 0)).toMatch(
+      /^https:\/\/api\.telegram\.org\/botT\/getUpdates\?timeout=0&allowed_updates=/,
+    )
+    expect(getUpdatesUrl('T', 42)).toMatch(
+      /^https:\/\/api\.telegram\.org\/botT\/getUpdates\?offset=42&timeout=0&allowed_updates=/,
+    )
   })
 })
 
@@ -49,9 +55,43 @@ describe('parseUpdates', () => {
   test('non-text updates ignored; empty result → offset 0', () => {
     expect(parseUpdates({ result: [{ update_id: 3, message: { chat: { id: '999' } } }] }, '999')).toEqual({
       messages: [],
+      callbacks: [],
       nextOffset: 4,
     })
-    expect(parseUpdates({ result: [] }, '999')).toEqual({ messages: [], nextOffset: 0 })
-    expect(parseUpdates({}, '999')).toEqual({ messages: [], nextOffset: 0 })
+    expect(parseUpdates({ result: [] }, '999')).toEqual({ messages: [], callbacks: [], nextOffset: 0 })
+    expect(parseUpdates({}, '999')).toEqual({ messages: [], callbacks: [], nextOffset: 0 })
+  })
+
+  test('callback_query taps surface as callbacks (authorized chat only)', () => {
+    const json = {
+      result: [
+        {
+          update_id: 11,
+          callback_query: {
+            id: 'cq1',
+            data: 'hitl:resolve:abc',
+            message: { chat: { id: '999' } },
+          },
+        },
+        {
+          update_id: 12,
+          callback_query: {
+            id: 'cq2',
+            data: 'hitl:resolve:other',
+            message: { chat: { id: '777' } }, // unauthorized — ignored
+          },
+        },
+      ],
+    }
+    const r = parseUpdates(json, '999')
+    expect(r.callbacks).toEqual([
+      { updateId: 11, queryId: 'cq1', data: 'hitl:resolve:abc', fromChatId: '999' },
+    ])
+    expect(r.nextOffset).toBe(13)
+  })
+
+  test('allowed_updates query string includes callback_query', () => {
+    expect(getUpdatesUrl('t', 0)).toContain('callback_query')
+    expect(getUpdatesUrl('t', 5)).toContain('callback_query')
   })
 })

@@ -536,7 +536,9 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
                   </summary>
                   <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-zinc-500">
                     <span>/repos · /cd &lt;repo&gt;</span>
+                    <span>/sessions · /about</span>
                     <span>/runs · /cancel &lt;n&gt;</span>
+                    <span>/tail &lt;id|n&gt;</span>
                     <span>/agents [@repo]</span>
                     <span>/run &lt;agent&gt; [opts]</span>
                     <span>/tickets [@repo]</span>
@@ -544,13 +546,17 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
                     <span>/ticket new &lt;title&gt;</span>
                     <span>/close &lt;slug|n&gt;</span>
                     <span>/schedules</span>
-                    <span>/pause · /resume</span>
-                    <span>/runnow &lt;id|n&gt;</span>
-                    <span>/hitl · /resolve &lt;n&gt;</span>
+                    <span>/pause · /resume · /runnow</span>
+                    <span>/hitl · /resolve · /reopen</span>
                     <span>/mrs [@repo] · /mr &lt;iid&gt;</span>
                     <span>/state &lt;agent&gt;</span>
                     <span>/reset-state &lt;agent&gt;</span>
+                    <span>/install &lt;agent&gt;</span>
+                    <span>/rebuild</span>
                     <span>/harness · /activity</span>
+                  </div>
+                  <div className="mt-1.5 text-[10px] text-zinc-600">
+                    HITL pings include inline ✅ Resolve / 🪵 Tail run buttons — tap to act without typing.
                   </div>
                 </details>
               )}
