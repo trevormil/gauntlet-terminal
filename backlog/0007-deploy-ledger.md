@@ -1,9 +1,9 @@
 ---
 id: 7
-title: "Deploy ledger: persist (sha, repo, env, at, deployer) + cross-repo 'what's live' view"
+title: "Deploy ledger: terminal-cli helper + activity events + small dashboard view"
 status: open
 priority: low
-horizon: next
+horizon: future
 hitl: false
 type: feature
 source: research
@@ -14,142 +14,74 @@ refs: []
 depends_on: []
 ---
 
-A thin ledger that records every deploy event across managed repos so the
-harness can answer "which SHAs are live where, since when" without
-re-deriving it each session.
+Refactored: the ledger is a flat JSONL file written by a
+`terminal-cli deploy` subcommand. Logged either manually from a
+deploy script or by a `/deploy` skill (project-template). The
+"dashboard view" is a small table that reads activity events — no
+new schema, no separate store.
 
-**Filter applied:** Claude/Codex sessions forget Tuesday's deploy by
-Friday. The harness uniquely persists cross-session + cross-repo state.
-APM / Sentry / Datadog territory is OUT of scope — this is just a log of
-"who shipped what when," not regression detection.
+**Filter applied:** the JSONL itself is just data. The harness adds
+value via cross-session persistence + cross-repo aggregation. Both
+fall out of using `activity.jsonl` as the underlying store with a
+`kind: deploy` tag.
 
 ## Storage
 
-`~/.config/TerMinal/deploys.jsonl` — append-only:
+Reuse the existing `~/.config/TerMinal/activity.jsonl` with a new
+kind:
 
 ```jsonl
-{"id":"uuid","sha":"abc1234","repo":"trevormiller/vellum-project","env":"prod","at":1700000000000,"deployer":"trevor","note":"optional"}
-{"id":"uuid","sha":"def5678","repo":"trevormiller/agentforge","env":"staging","at":1700000010000,"deployer":"trevor"}
+{"id":"...","ts":...,"kind":"deploy","title":"vellum-project · prod","detail":"abc1234","repo":"trevormiller/vellum-project","repoRoot":"...","ref":{"env":"prod","sha":"abc1234"}}
 ```
 
-JSONL not SQLite — greppable, no migration. Edits are by hand if you log
-something wrong.
+No new file, no new sweep, no new schema. The deploy ledger IS the
+activity feed filtered to `kind: deploy`.
 
-## Logging endpoints
+## Logging — small `terminal-cli` extension
 
-**1. CLI** (primary — fits into deploy scripts):
 ```bash
-terminal-cli deploy log <repo> <env> [sha] [--note "<text>"]
-# Examples:
-#   terminal-cli deploy log vellum-project prod
-#       # records HEAD of cwd's git repo
-#   terminal-cli deploy log agentforge staging abc1234 --note "hotfix"
+terminal-cli deploy log <env> [sha] [--note "<text>"]
+# Defaults to git rev-parse HEAD in cwd
 ```
 
-Env can be any string (`prod`, `staging`, `canary`, `eu-west-1`, etc.) —
-no enum. The user/script decides.
+Emits one activity event with `kind: deploy`. ~30 lines added to
+`bin/terminal-cli`.
 
-**2. Telegram:**
+## Telegram — no work
+
+`/activity deploy` already filters; nothing new to write. Add
+`/deploys` as a thin alias if it earns its keep:
+
 ```
-/deploy <repo> <env> [sha]
+/deploys              # last 10 deploy events (all repos)
+/deploys @repo        # one repo
+/deploys prod         # env-filter — uses ref.env
 ```
 
-Useful for "I just bumped the digit on the prod box from my phone" cases.
-
-**3. Dashboard button** (Stage 3): "+ Deploy" on the new Deploys tab — opens
-a form (repo + env + optional sha + note). Submits to the same logging
-path.
-
-## Auto-detect: explicitly skipped
-
-Every repo ships differently (kubectl apply, rsync+restart, docker push,
-GitLab Pages, Heroku, custom scripts). Auto-detection requires per-repo
-adapters that drift. Manual / scripted log is the simpler invariant — when
-you ship, you log.
-
-The exception path: if a `deploy:` activity event lands (from a
-project-template-installed `/deploy` skill), the ledger records it
-automatically. Skills opt in by emitting the event; nothing assumes.
+~20 lines in `src/main/telegram.ts`.
 
 ## Dashboard surface
 
-**New tab: Deploys** (order ~3.6 — after Schedules):
+Small section on the existing **Activity tab** (NOT a new tab): a
+filter chip "deploy" toggles to show only deploy events with a
+table-style render (env / sha / repo / when / note).
 
-```
-Cross-repo · what's live
-┌────────────────────────────────────────────────────────────┐
-│ repo                  · env     · sha     · at      · note │
-├────────────────────────────────────────────────────────────┤
-│ vellum-project        · prod    · abc1234 · 2h ago  ·      │
-│ vellum-project        · staging · def5678 · 3h ago  · hotfix│
-│ agentforge            · prod    · ghi9012 · 1d ago  ·      │
-│ ...                                                        │
-└────────────────────────────────────────────────────────────┘
-```
+No new tab, no new IPC. The Activity tab already lists events.
 
-Filter chips: env (prod/staging/all), repo (sourced from ledger + tracked
-repos).
+## What this does NOT do
 
-Click a row → drill-down shows:
-- The deploy event raw record
-- PR/MR links for merges between this SHA and the previous deploy SHA in
-  the same (repo, env) — "what shipped"
-- (When #0001 lands) AI-authored commits highlighted in that range
+- No APM/Sentry/Datadog ingestion.
+- No auto-detect of deploys (per-repo `/deploy` skill calls
+  `terminal-cli deploy log` after a successful deploy — opt-in per
+  repo).
+- No regression detection or rollback.
+- No new Deploys tab (collapses into Activity instead).
 
-## Cross-repo "live in prod" view
+## App scope summary
 
-A sub-section on the same tab showing the latest deploy per (repo, env):
+- 1 new `terminal-cli` subcommand (~30 lines)
+- 1 filter chip on Activity tab (~10 lines)
+- 1 Telegram alias (~20 lines)
 
-```
-What's live in prod
-  vellum-project   · abc1234 · 2h ago
-  agentforge       · ghi9012 · 1d ago
-  helios           · pqr3456 · 5d ago
-  ...
-```
-
-This is the answer to "what's currently running across my fleet" — one
-glance, no SSH-ing, no remote logs.
-
-## Telegram
-
-- `/deploy <repo> <env> [sha]` — log
-- `/deploys` — last 10 across all repos
-- `/deploys @repo` — repo-only
-- `/deploys prod` — env-filter ("what's live in prod right now")
-- `/whatsLive <repo>` — current SHA per env for one repo
-
-## Pairs with #0001 (eventually)
-
-Once observability lands, deploys can carry a "spent_on_authoring_this_sha"
-roll-up — the cumulative cost of AI runs that contributed commits between
-the previous deploy SHA and this one. Answers "what's the dollar cost of
-the code I just shipped?"
-
-## Stage plan
-
-**Stage 1** — JSONL + `terminal-cli deploy log` + Telegram `/deploy` +
-`/deploys`. No UI yet; verifiable via the ledger file.
-
-**Stage 2** — Deploys tab on dashboard with the cross-repo + per-repo
-views.
-
-**Stage 3** — Drill-down join with PR/MR artifacts ("what shipped").
-
-**Stage 4** — Add `/deploy` skill in project-template that emits a
-`deploy:` activity event after a successful deploy (so the ledger auto-
-populates without manual call).
-
-## Non-goals
-
-- No regression detection. No error-rate joins. No rollback. APM/SaaS
-  territory.
-- No environment topology / inventory. Just a ledger of events, not a
-  description of the world.
-- No auto-detect across N deploy scripts.
-- No write-tracking by individual humans across a team (single-user).
-
-## Risk
-
-Very low. Append-only JSONL; edits are manual file-level. No live system
-depends on it being correct — it's a memory aid + a dashboard view.
+Plus a `/deploy` skill in project-template that calls the CLI after a
+successful deploy. That's an agent script, not app code.

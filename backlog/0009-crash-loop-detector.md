@@ -1,6 +1,6 @@
 ---
 id: 9
-title: "Crash-loop / blocked-session detector: PTY heartbeat + fs-write + restart counter"
+title: "Stuck-session detection: crash-loop watcher (agent) + wedged-session detector (app)"
 status: open
 priority: medium
 horizon: next
@@ -14,155 +14,113 @@ refs: []
 depends_on: [0001]
 ---
 
-Detect wedged Claude/Codex sessions and crash-looping cron agents that
-the system would otherwise silently absorb. Distinguishes "Opus is
-genuinely thinking" from "wedged on an unseen permission prompt at 2am."
+Refactored into two clearly separated parts. The crash-loop half is
+a pure agent script (reads the run ledger from #0001). The
+wedged-session half is genuinely app-shaped because it needs PTY
+buffer + fs-write tracking that lives in main.
 
-**Filter applied:** by definition a wedged session can't detect its own
-wedge — the very code that would notice is the code that's stuck. Only
-an external observer correlating PTY output, fs-writes-by-PID, and the
-run ledger can call this out. Telegram + HITL surface is harness-only.
+## Part A — Crash-loop watcher (PURE AGENT)
 
-## Two distinct detectors
+`.agents/crash-loop-watcher.sh` — runs hourly via cron:
 
-### Detector A — Wedged interactive session
+```bash
+#!/usr/bin/env bash
+set -uo pipefail
 
-For each managed terminal pane:
+# Reads the ai-runs/ ledger from #0001 (or cron-runs/ for now)
+# Computes failures per schedule in the last 10 minutes
+# If > 3 failures AND > 50% fail rate: file HITL + optionally auto-pause
 
-Sample every 30s:
-- Last PTY output timestamp (stream from xterm's data buffer)
-- Last fs write attributed to the pane's PTY PID
-  (poll via `lsof -p <PID>` looking at WRITE-mode file handles, or
-  cache from FSEvents stream filtered by PID)
-- Last user input timestamp (already tracked for snippets)
+runs=$(find ~/.config/TerMinal/cron-runs -name "*.json" -mmin -20 -print0 | \
+  xargs -0 -I{} jq -c '{scheduleId, agentTitle, status, startedAt}' {} 2>/dev/null)
 
-A session is **stuck** when ALL THREE are true:
-1. No novel PTY output in > 5 min (heartbeat patterns excluded — see
-   below)
-2. No fs writes from this PID in > 5 min
-3. Last user input > 5 min ago
-
-The conjunction is intentional. "Output but no fs writes" = Opus
-streaming a long answer (alive). "fs writes but no PTY" = a tool
-running off-screen (alive). "User typing" = the human is engaged
-(don't alert).
-
-### Heartbeat detection
-
-Claude/Codex emit recognizable spinners. We DON'T treat these as novel
-output — they're heartbeats:
-- Claude: lines matching `^\s*(✻|✼|✽|✾|✿).*` (the rotating glyph
-  status line)
-- Codex: lines matching the spinner-frame pattern Codex uses
-- Either: `tool_use` blocks rolling stdout
-
-Heartbeat-only output for > 5 min = treated as no output. Real diff
-content / file paths / non-spinner text = alive.
-
-### Detector B — Crash-looping cron agent
-
-Reads from the run ledger (#0001). For each scheduled agent:
-
-If > 3 runs in 10 min AND > 50% of them failed (exit ≠ 0) AND the
-schedule's cadence doesn't justify that frequency → mark crash-loop.
-
-(The schedule-overdue HITL already covers the inverse case: schedule
-fires too rarely. This adds: schedule fires too often + fails.)
-
-## Storage
-
-`~/.config/TerMinal/stuck-sessions.jsonl` — one row per detection event:
-
-```jsonl
-{"id":"uuid","detector":"wedged-session","sessionKey":"...","pid":12345,"lastOutputAt":...,"lastFsWriteAt":...,"lastInputAt":...,"detectedAt":...,"firstPromptHint":"document this auth flow","resolved":false,"resolvedAt":null}
-{"id":"uuid","detector":"crash-loop","scheduleId":"...","agentId":"docs","recentFailureCount":4,"detectedAt":...,"resolved":false}
+echo "$runs" | jq -s 'group_by(.scheduleId) | map({
+  scheduleId: .[0].scheduleId,
+  agentTitle: .[0].agentTitle,
+  total: length,
+  failed: (map(select(.status == "failed")) | length)
+}) | map(select(.total > 3 and (.failed / .total) > 0.5))' | \
+jq -c '.[]' | while read row; do
+  agent=$(echo "$row" | jq -r '.agentTitle')
+  sched=$(echo "$row" | jq -r '.scheduleId')
+  count=$(echo "$row" | jq -r '.failed')
+  terminal-cli hitl "Crash-loop · $agent" \
+    "$count failures in 20m. Auto-paused. Re-enable in Schedules tab."
+  # Pause via the disabled.json file (existing mechanism)
+  ...
+done
 ```
 
-Resolved when:
-- Wedged: user types into the pane OR the pane closes
-- Crash-loop: agent succeeds OR is disabled by user OR by circuit breaker
+No app code at all. Reads existing on-disk state, files HITL via the
+existing helper.
 
-## Surfaces
+## Part B — Wedged-session detector (APP — small)
 
-**Dashboard:**
-- Session sub-bar in the Terminal tab: amber dot on stuck panes
-  (alongside the existing green/red pulse for working/idle)
-- Schedules tab: red badge "crash-loop" on schedules in the state
-- Harness status panel (Settings): "1 wedged session, 2 crash-loops"
+This one genuinely needs to live in `src/main/` because it requires:
+- PTY output buffer tail per session (already exists in
+  `src/main/`'s session map)
+- PID-scoped file-write detection (poll `lsof -p <pid>` every 30s)
+- User-input timestamp tracking (already tracked for snippets)
 
-**Telegram** (only on first detection, not repeated):
-- 🪤 Wedged: `vellum-project · S2 · "document the new auth flow" stuck
-  for 6m (no output, no fs writes, no input). /tail to see, /cancel
-  to kill.`
-- 🔁 Crash-loop: `Schedule docs · vellum-project · 4 failures in 8
-  min. Watchdog auto-pause? /pause to confirm.`
+### Detection rule
 
-**HITL** (only crash-loops file HITL — wedged sessions get pinged but
-don't pile up in the inbox):
-- Source: cron-fail (existing)
-- runId pointer to the latest failed run
-- One-tap [Cancel & Disable] button (callback handler)
+A session is **stuck** when ALL THREE are true:
+1. No novel PTY output in > N minutes (heartbeat patterns excluded —
+   Claude's `✻/✼/✽/✾/✿` glyph, Codex's spinner frames)
+2. No fs writes from this PID in > N minutes
+3. Last user input > N minutes ago
 
-## Auto-actions
+Defaults: `N = 5 min`. Configurable in Settings.
 
-**Wedged session:** alert only. Never SIGKILL automatically — user might
-be deliberately leaving it idle. (We file the alert + leave it alone.)
+The conjunction matters: output but no writes = streaming answer
+(alive); writes but no output = background tool (alive); typing =
+human engaged (don't alert).
 
-**Crash-loop:** if > 6 failures in 20 min, auto-pause the schedule (set
-disabled = true). User must explicitly re-enable. Counts as a forceful
-circuit-break.
+### Surface
 
-## Implementation notes
+- Session sub-bar pill in the Terminal tab: amber dot on stuck panes
+  (alongside the existing green/red pulse)
+- Telegram ping (once per detection, not repeated): "🪤 Wedged:
+  vellum-project · S2 · '<first-prompt>' stuck for 6m"
+- Activity event `kind: blocked` so it shows in Activity tab
 
-- PTY tail: SessionView already streams xterm output. Add a timestamp
-  per stream chunk; a small `lastTextAt`/`lastHeartbeatAt` tracker per
-  pane.
-- fs-write tracking: macOS `fs_usage -e -f filesys -p <PID>` or polling
-  `lsof -p <PID>`. The latter is portable, the former real-time. Pick
-  poll for v0 (1-Hz is enough for the 5-min window).
-- Per-pane state lives in the existing `sessions` map in `src/main/`.
+No HITL on this side — wedged-session is one-off, not durable.
+
+### Implementation
+
+- Per-session state in the existing `sessions` map: `{ lastOutputAt,
+  lastHeartbeatAt, lastInputAt }`
+- New `lsof`-poll loop on a 30s cadence per pane
+- Heartbeat patterns matched against the existing PTY output stream
+
+Probably ~150 lines in `src/main/`.
+
+## App scope summary
+
+- Crash-loop watcher: **0 app code.** Pure agent script in
+  project-template.
+- Wedged-session detector: **~150 lines in `src/main/`** + a small
+  amber-dot in the Terminal sub-bar.
 
 ## Stage plan
 
-**Stage 1** — Detector B (crash-loop) only. Reads from #0001's ledger,
-fires Telegram + HITL + auto-pause. Zero false-positive risk because
-it's data-driven from real exit codes.
+**Stage 1** — Author the crash-loop agent script (in project-template).
+Schedule it on the harness. Zero risk; reads existing data.
 
-**Stage 2** — Detector A (wedged session) without auto-actions. Just
-the alert + dashboard amber dot. Tune the heartbeat patterns over a
-week.
+**Stage 2** — Wedged-session detection in `src/main/`. Dry-run for a
+week (just log to activity, no Telegram).
 
-**Stage 3** — Optional: refine to use FSEvents for sub-second fs-write
-tracking if 1-Hz polling produces noisy false positives.
+**Stage 3** — Flip Telegram pings on for the wedged detector.
 
 ## Non-goals
 
-- No auto-SIGKILL on stuck sessions. User might be leaving them
-  intentionally.
-- No "summarize what the session was doing" via LLM before alerting.
-  The Telegram message just carries the first prompt + the timestamps.
-- No cross-session wedge correlation ("session A blocked on output of
-  session B"). Out of scope.
-- No alerting for sessions in the dock minimized / screen-locked
-  context. The detector runs regardless of focus state.
+- No auto-SIGKILL of stuck sessions
+- No cross-session wedge correlation
+- No alerting in focused-app context (always run regardless)
 
 ## Risk
 
-Medium. Heartbeat false positives (Opus genuinely thinking long) would
-be annoying for Detector A. Mitigations:
-- Conjunction of three "no" conditions, not any one
-- Configurable thresholds (`stuckMinutes: 5` defaults; bump to 10/15 if
-  noisy)
-- Heartbeat pattern allowlist tuned against real session logs in week
-  one
-
-Crash-loop detector (B) has very low false-positive risk because it's
-driven by actual exit codes.
-
-## Pairs with
-
-- #0001 (observability) — restart counter reads the ledger
-- Existing watchdog (`sweepStaleCronRuns`) — handles the "> 2h running
-  with no live process" case; this fills the gap between minutes and
-  the 2-hour threshold
-- Existing schedule-overdue HITL — covers the inverse cadence problem
+- Crash-loop: zero (data-driven, no false positives possible)
+- Wedged: medium — heartbeat pattern matching could miss Opus
+  thinking long. Mitigated by the conjunction + tunable thresholds +
+  dry-run week.
