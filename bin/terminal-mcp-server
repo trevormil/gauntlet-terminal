@@ -1,13 +1,15 @@
 #!/usr/bin/env bun
 // terminal-mcp-server — Model Context Protocol server exposing TerMinal's
-// cross-session state (backlog tickets, PRs, schedules, agent runs) to
-// in-session Claude/Codex agents. Stdio transport, read-only.
+// cross-session state to in-session Claude/Codex agents.
 //
-// Closes ticket #0003. Sessions are sandboxed to one cwd; this server is the
-// bridge to the harness's persistent state.
+// READ tools: cross-session views (tickets, PRs, schedules, runs, spend).
+// WRITE tools: deterministic data filing (ticket, hitl, activity, state)
+// so agents skip reading ~5-7k tokens of skill files every time they file
+// data. Schema decisions stay with the model; schema formatting is done here.
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, basename, dirname, sep } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 
 const CFG = join(homedir(), '.config', 'TerMinal')
@@ -297,6 +299,261 @@ function aiSpendToday(args) {
   return { totalUsd, totalRuns, byModel, byAgent }
 }
 
+// ===========================================================================
+// WRITE TOOLS — deterministic data filing. Agents skip reading SKILL.md.
+// ===========================================================================
+
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const slugify = (s) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50) || 'untitled'
+
+// --- file_ticket ----------------------------------------------------------
+
+function fileTicket(args) {
+  const { repo, title, body = '', type = 'feature', priority = 'medium', status = 'open', source = 'mcp' } = args
+  if (!title) throw new Error('title is required')
+  const repoRoot = findRepoRoot(repo)
+  if (!repoRoot) throw new Error(`no repo matching "${repo}"`)
+  const backlogDir = join(repoRoot, 'backlog')
+  if (!existsSync(backlogDir)) throw new Error(`${repoRoot}/backlog/ does not exist`)
+  // Atomic-ish ID allocation via .next-id (matches bin/next-backlog-id semantics)
+  const nextIdFile = join(backlogDir, '.next-id')
+  let nextId = 1
+  if (existsSync(nextIdFile)) {
+    try {
+      nextId = parseInt(readFileSync(nextIdFile, 'utf8').trim(), 10) || 1
+    } catch {}
+  } else {
+    // Fall back to highest existing + 1
+    const files = readdirSync(backlogDir).filter((f) => /^\d{4}-.*\.md$/.test(f))
+    nextId = files.reduce((m, f) => Math.max(m, parseInt(f.slice(0, 4), 10)), 0) + 1
+  }
+  const id = String(nextId).padStart(4, '0')
+  const slug = `${id}-${slugify(title)}`
+  const today = todayStr()
+  const frontmatter = `---
+id: ${nextId}
+title: ${JSON.stringify(title)}
+status: ${status}
+priority: ${priority}
+horizon: now
+hitl: false
+type: ${type}
+source: ${source}
+created: ${today}
+updated: ${today}
+prs: []
+refs: []
+depends_on: []
+---
+
+${body}
+`
+  const path = join(backlogDir, `${slug}.md`)
+  writeFileSync(path, frontmatter)
+  // Bump .next-id
+  try {
+    writeFileSync(nextIdFile, String(nextId + 1) + '\n')
+  } catch {}
+  // Emit activity event so the harness picks it up
+  emitActivityRaw({ kind: 'ticket-filed', title: `Ticket filed · #${id}`, detail: title, repo: basename(repoRoot), repoRoot })
+  return { slug, id, path }
+}
+
+// --- update_ticket --------------------------------------------------------
+
+function updateTicket(args) {
+  const { slug, status, priority, appendPrUrl, removePrUrl } = args
+  if (!slug) throw new Error('slug is required')
+  let path = null
+  let repoRoot = null
+  for (const root of knownRepoRoots()) {
+    const p = join(root, 'backlog', `${slug}.md`)
+    if (existsSync(p)) {
+      path = p
+      repoRoot = root
+      break
+    }
+  }
+  if (!path) throw new Error(`ticket ${slug} not found in any known repo`)
+  let raw = readFileSync(path, 'utf8')
+  const m = raw.match(/^(---\n[\s\S]*?\n---)([\s\S]*)$/)
+  if (!m) throw new Error(`malformed frontmatter in ${path}`)
+  let fm = m[1]
+  const setField = (key, val) => {
+    const re = new RegExp(`^(${key}:[ \\t]*).*$`, 'm')
+    if (re.test(fm)) fm = fm.replace(re, `$1${val}`)
+    else fm = fm.replace(/\n---$/, `\n${key}: ${val}\n---`)
+  }
+  if (status) setField('status', status)
+  if (priority) setField('priority', priority)
+  setField('updated', todayStr())
+  // PR URL list manipulation — `prs:` is a YAML inline list
+  if (appendPrUrl || removePrUrl) {
+    const prsMatch = fm.match(/^prs:\s*(.*)$/m)
+    let prs = []
+    if (prsMatch) {
+      const raw = prsMatch[1].trim()
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        prs = raw
+          .slice(1, -1)
+          .split(',')
+          .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+          .filter(Boolean)
+      }
+    }
+    if (appendPrUrl && !prs.includes(appendPrUrl)) prs.push(appendPrUrl)
+    if (removePrUrl) prs = prs.filter((p) => p !== removePrUrl)
+    const formatted = `[${prs.map((p) => JSON.stringify(p)).join(', ')}]`
+    if (prsMatch) fm = fm.replace(/^prs:\s*.*$/m, `prs: ${formatted}`)
+    else fm = fm.replace(/\n---$/, `\nprs: ${formatted}\n---`)
+  }
+  writeFileSync(path, fm + m[2])
+  return { ok: true, path }
+}
+
+// --- file_hitl ------------------------------------------------------------
+
+function fileHitlTool(args) {
+  const { title, action, detail, repo, source = 'agent', runId, ticketPath } = args
+  if (!title) throw new Error('title is required')
+  const cfg = join(process.env.HOME || '', '.config', 'TerMinal')
+  mkdirSync(cfg, { recursive: true })
+  const file = join(cfg, 'hitl.json')
+  let list = []
+  try {
+    if (existsSync(file)) {
+      const arr = JSON.parse(readFileSync(file, 'utf8'))
+      if (Array.isArray(arr)) list = arr
+    }
+  } catch {}
+  const item = {
+    id: randomUUID(),
+    title,
+    action,
+    detail,
+    repo,
+    source,
+    status: 'open',
+    createdAt: Date.now(),
+    runId,
+    ticketPath,
+  }
+  writeFileSync(file, JSON.stringify([item, ...list], null, 2))
+  emitActivityRaw({ kind: 'blocked', title: `HITL · ${title}`, detail: action || detail || '', repo, hitlId: item.id, runId })
+  // Telegram ping (best-effort, with inline buttons)
+  try {
+    const settings = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf8'))?.telegram
+    if (settings?.botToken && settings?.chatId) {
+      const row = [{ text: '✅ Resolve', callback_data: `hitl:resolve:${item.id}` }]
+      if (runId) row.push({ text: '🪵 Tail run', callback_data: `run:tail:${runId}` })
+      fetch(`https://api.telegram.org/bot${settings.botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: settings.chatId,
+          text: `⛔ HITL · ${title}${action ? ` — ${action}` : ''}`,
+          reply_markup: { inline_keyboard: [row] },
+        }),
+        signal: AbortSignal.timeout(8000),
+      }).catch(() => {})
+    }
+  } catch {}
+  return { id: item.id }
+}
+
+// --- resolve_hitl ---------------------------------------------------------
+
+function resolveHitlTool(args) {
+  const { id, resolved = true } = args
+  if (!id) throw new Error('id is required')
+  const file = join(process.env.HOME || '', '.config', 'TerMinal', 'hitl.json')
+  let list = []
+  try {
+    list = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return { ok: false }
+  }
+  const idx = list.findIndex((h) => h.id === id)
+  if (idx < 0) return { ok: false }
+  list[idx] = {
+    ...list[idx],
+    status: resolved ? 'resolved' : 'open',
+    resolvedAt: resolved ? Date.now() : undefined,
+  }
+  writeFileSync(file, JSON.stringify(list, null, 2))
+  return { ok: true }
+}
+
+// --- emit_activity --------------------------------------------------------
+
+function emitActivityRaw({ kind, title, detail, repo, repoRoot, hitlId, runId }) {
+  const cfg = join(process.env.HOME || '', '.config', 'TerMinal')
+  mkdirSync(cfg, { recursive: true })
+  const file = join(cfg, 'activity.jsonl')
+  const ev = {
+    id: randomUUID(),
+    ts: Date.now(),
+    kind: kind || 'info',
+    title: title || '',
+    detail: detail || '',
+    repo: repo || '',
+    repoRoot: repoRoot || '',
+    ...(hitlId ? { hitlId } : {}),
+    ...(runId ? { runId, runSource: 'agent' } : {}),
+  }
+  try {
+    appendFileSync(file, JSON.stringify(ev) + '\n')
+  } catch {}
+  return ev
+}
+
+function emitActivityTool(args) {
+  emitActivityRaw(args)
+  return { ok: true }
+}
+
+// --- set_agent_state / get_agent_state -----------------------------------
+
+function stateFilePath(repoArg, agentId) {
+  if (!repoArg) throw new Error('repo is required')
+  if (!agentId) throw new Error('agent is required')
+  const root = findRepoRoot(repoArg)
+  const slug = root ? basename(root) : repoArg
+  return join(process.env.HOME || '', '.config', 'TerMinal', 'agent-state', slug, `${agentId}.json`)
+}
+
+function setAgentStateTool(args) {
+  const { repo, agent, key, value } = args
+  if (!key) throw new Error('key is required')
+  const file = stateFilePath(repo, agent)
+  mkdirSync(dirname(file), { recursive: true })
+  let state = {}
+  try {
+    if (existsSync(file)) state = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {}
+  state[key] = value
+  state.lastRunAt = Date.now()
+  writeFileSync(file, JSON.stringify(state, null, 2) + '\n')
+  return { ok: true }
+}
+
+function getAgentStateTool(args) {
+  const { repo, agent, key } = args
+  const file = stateFilePath(repo, agent)
+  if (!existsSync(file)) return key ? { value: null } : { state: {} }
+  try {
+    const s = JSON.parse(readFileSync(file, 'utf8'))
+    return key ? { value: s[key] ?? null } : { state: s }
+  } catch {
+    return key ? { value: null } : { state: {} }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // MCP JSON-RPC server (stdio)
 //
@@ -365,6 +622,129 @@ const TOOLS = [
     description: 'Cost summary for today (USD spent across the AI fleet). Filterable by repo or agent.',
     inputSchema: { type: 'object', properties: { repo: { type: 'string' }, agent: { type: 'string' } } },
   },
+  // ---- WRITE TOOLS (deterministic — agents skip reading skill files) -----
+  {
+    name: 'file_ticket',
+    description:
+      'Create a new backlog ticket. Atomically allocates the next NNNN id, writes the frontmatter, returns the slug + path. Use after deciding what to file — schema decisions stay with the model, formatting is done here.',
+    inputSchema: {
+      type: 'object',
+      required: ['repo', 'title'],
+      properties: {
+        repo: { type: 'string', description: 'Repo basename (e.g. "vellum-project")' },
+        title: { type: 'string' },
+        body: { type: 'string' },
+        type: {
+          type: 'string',
+          enum: ['bug', 'feature', 'security', 'docs', 'dx', 'testing', 'ux', 'performance'],
+        },
+        priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+        status: {
+          type: 'string',
+          enum: ['open', 'in-progress', 'closed', 'stuck', 'icebox'],
+        },
+        source: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'update_ticket',
+    description:
+      'Mutate a ticket\'s frontmatter (status, priority) and optionally add/remove a PR URL. Auto-bumps `updated:`. Body is never modified. Repo is auto-resolved from the slug.',
+    inputSchema: {
+      type: 'object',
+      required: ['slug'],
+      properties: {
+        slug: { type: 'string' },
+        status: {
+          type: 'string',
+          enum: ['open', 'in-progress', 'closed', 'stuck', 'icebox'],
+        },
+        priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+        appendPrUrl: { type: 'string' },
+        removePrUrl: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'file_hitl',
+    description:
+      'File a human-in-the-loop item into the TerMinal inbox. Emits a blocked activity event and pings Telegram with [Resolve] / [Tail run] buttons. Use when an agent hits a genuine blocker that needs the human.',
+    inputSchema: {
+      type: 'object',
+      required: ['title'],
+      properties: {
+        title: { type: 'string' },
+        action: { type: 'string', description: 'What the human needs to do' },
+        detail: { type: 'string' },
+        repo: { type: 'string' },
+        source: {
+          type: 'string',
+          enum: ['manual', 'agent', 'skill', 'factory', 'cron-fail'],
+        },
+        runId: { type: 'string' },
+        ticketPath: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'resolve_hitl',
+    description:
+      'Mark a HITL item resolved (or re-open it). Use when context within an agent session resolves what was blocking.',
+    inputSchema: {
+      type: 'object',
+      required: ['id'],
+      properties: { id: { type: 'string' }, resolved: { type: 'boolean' } },
+    },
+  },
+  {
+    name: 'emit_activity',
+    description:
+      'Append one event to the TerMinal activity log. Consumed by the Activity tab + Telegram feed. Use to surface progress without spamming Telegram.',
+    inputSchema: {
+      type: 'object',
+      required: ['kind', 'title'],
+      properties: {
+        kind: {
+          type: 'string',
+          description:
+            'session-start | session-end | ticket-filed | ticket-closed | pr-opened | pr-verdict | pr-merged | tests-pass | tests-fail | check | doc | agent-run | task-complete | blocked | error | info',
+        },
+        title: { type: 'string' },
+        detail: { type: 'string' },
+        repo: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'set_agent_state',
+    description:
+      'Persist per-(repo, agent) sidecar state at ~/.config/TerMinal/agent-state/<repo>/<agent>.json. Use for lastScannedSha or any arbitrary key so re-runs no-op early.',
+    inputSchema: {
+      type: 'object',
+      required: ['repo', 'agent', 'key'],
+      properties: {
+        repo: { type: 'string' },
+        agent: { type: 'string' },
+        key: { type: 'string' },
+        value: {},
+      },
+    },
+  },
+  {
+    name: 'get_agent_state',
+    description:
+      'Read per-(repo, agent) sidecar state. Omit `key` for the whole object. Use at the top of /check-style flows to early-exit on unchanged SHA.',
+    inputSchema: {
+      type: 'object',
+      required: ['repo', 'agent'],
+      properties: {
+        repo: { type: 'string' },
+        agent: { type: 'string' },
+        key: { type: 'string' },
+      },
+    },
+  },
 ]
 
 const HANDLERS = {
@@ -375,6 +755,14 @@ const HANDLERS = {
   list_scheduled_agents: listSchedules,
   recent_agent_runs: recentAgentRuns,
   ai_spend_today: aiSpendToday,
+  // writes
+  file_ticket: fileTicket,
+  update_ticket: updateTicket,
+  file_hitl: fileHitlTool,
+  resolve_hitl: resolveHitlTool,
+  emit_activity: emitActivityTool,
+  set_agent_state: setAgentStateTool,
+  get_agent_state: getAgentStateTool,
 }
 
 function jsonRpc(id, result, error) {
