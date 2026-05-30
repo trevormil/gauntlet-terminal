@@ -192,6 +192,10 @@ function cmdHelp() {
       'MRS · ACTIVITY · HARNESS',
       '/mrs [@repo] · /mr <iid> · /activity [N] · /harness · /status',
       '',
+      'BACKGROUND',
+      '/bg [@repo] [claude|codex] [model] <prompt>',
+      '/bg list · /bg cancel <n|id>',
+      '',
       'INFRASTRUCTURE',
       '/sessions · /tail <id|n> · /rebuild · /about',
       '/install <agent> [@repo]   copy from project-template',
@@ -645,6 +649,100 @@ function cmdInstall(args: string[]) {
   }
 }
 
+// --- /bg fire and forget ---------------------------------------------------
+//
+// Spawns a detached agent in a worktree-scoped run. End-of-run watcher pings
+// when the MR is ready. See src/main/bg-tasks.ts.
+
+function cmdBg(args: string[]) {
+  if (!args.length) {
+    return reply(
+      'Usage: /bg [<repo>] [claude|codex] [haiku|sonnet|opus|gpt-5] <prompt>\n' +
+        '       /bg list · /bg cancel <n|id>',
+    )
+  }
+  if (args[0] === 'list') return cmdBgList()
+  if (args[0] === 'cancel') return cmdBgCancel(args.slice(1))
+
+  // Parse repo / engine / model leading args
+  let engine: 'claude' | 'codex' = 'claude'
+  let model: string | undefined
+  let repo: RepoCtx | null = null
+  let promptStart = 0
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i].toLowerCase()
+    if (tok === 'claude' || tok === 'codex') {
+      engine = tok
+      promptStart = i + 1
+      continue
+    }
+    if (['haiku', 'sonnet', 'opus', 'gpt-5', 'gpt-5-codex', 'gpt-5-mini', 'o4-mini'].includes(tok)) {
+      model = tok
+      promptStart = i + 1
+      continue
+    }
+    if (!repo) {
+      const match = resolveRepo(tok)
+      if (match) {
+        repo = match
+        promptStart = i + 1
+        continue
+      }
+    }
+    break
+  }
+  if (!repo) {
+    // No repo specified — use current active or sticky
+    repo = resolveRepo()
+  }
+  if (!repo) return reply('No repo — /repos to list.')
+  const prompt = args.slice(promptStart).join(' ').trim()
+  if (!prompt) return reply('Empty prompt.')
+
+  // Lazy require to avoid pulling bg-tasks into telegram-parse tests.
+  const { spawnBgTask } = require('./bg-tasks') as typeof import('./bg-tasks')
+  const r = spawnBgTask({ repoRoot: repo.repoRoot, prompt, engine, model })
+  if ('error' in r) return reply(`⛔ ${r.error}`)
+  reply(
+    `🌙 fired · ${repo.label} · ${engine}${model ? `/${model}` : ''}\n${r.label}\n\nI'll ping when the MR is ready.`,
+  )
+}
+
+let lastBgIds: string[] = []
+function cmdBgList() {
+  const { listBgTasks } = require('./bg-tasks') as typeof import('./bg-tasks')
+  const tasks = listBgTasks().slice(0, 10)
+  if (!tasks.length) return reply('No background tasks.')
+  lastBgIds = tasks.map((t) => t.id)
+  const STATUS_EMOJI: Record<string, string> = {
+    running: '⏳',
+    done: '✅',
+    failed: '⛔',
+    canceled: '⏹',
+    queued: '⌛',
+  }
+  reply(
+    'Background tasks:\n' +
+      tasks
+        .map(
+          (t, i) =>
+            `${i + 1}. ${STATUS_EMOJI[t.status] || ''} ${t.repo} · ${t.label}` +
+            (t.mrUrl ? `\n   → ${t.mrUrl}` : ''),
+        )
+        .join('\n'),
+  )
+}
+
+function cmdBgCancel(args: string[]) {
+  const tok = args[0]
+  if (!tok) return reply('Usage: /bg cancel <n|id>')
+  const n = parseInt(tok, 10)
+  const id = n && lastBgIds[n - 1] ? lastBgIds[n - 1] : tok
+  const { cancelBgTask } = require('./bg-tasks') as typeof import('./bg-tasks')
+  const r = cancelBgTask(id)
+  reply(r.ok ? `⏹ canceled ${id.slice(0, 8)}` : `cannot cancel: ${r.error}`)
+}
+
 // --- harness + activity ----------------------------------------------------
 
 function cmdHarness() {
@@ -764,6 +862,8 @@ function handle(text: string) {
       return cmdAbout()
     case '/install':
       return cmdInstall(args)
+    case '/bg':
+      return cmdBg(args)
     default:
       return reply(`Unknown command ${cmd}. Send /help.`)
   }

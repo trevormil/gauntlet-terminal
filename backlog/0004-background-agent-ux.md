@@ -1,7 +1,7 @@
 ---
 id: 4
 title: "Background-agent UX: /bg <prompt> — fire task, walk away, Telegram-ping when done"
-status: open
+status: closed
 priority: high
 horizon: next
 hitl: false

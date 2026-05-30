@@ -287,6 +287,25 @@ export type HitlItem = {
   runSource?: 'cron' | 'agent'
   ticketPath?: string
 }
+export type BgTask = {
+  id: string
+  repo: string
+  repoRoot: string
+  prompt: string
+  engine: 'claude' | 'codex'
+  model?: string
+  worktree: string
+  branch: string
+  pid?: number
+  status: 'queued' | 'running' | 'done' | 'failed' | 'canceled'
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  logFile: string
+  mrUrl?: string
+  label: string
+}
+
 export type UnifiedRun = {
   id: string
   source: 'cron' | 'agent'
@@ -645,6 +664,18 @@ export type GtApi = {
       exitCode?: number
     }[]>
     models: () => Promise<string[]>
+  }
+  bg: {
+    list: () => Promise<BgTask[]>
+    get: (id: string) => Promise<BgTask | null>
+    log: (id: string) => Promise<string>
+    spawn: (input: {
+      repoRoot: string
+      prompt: string
+      engine?: 'claude' | 'codex'
+      model?: string
+    }) => Promise<BgTask | { error: string }>
+    cancel: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   harnessStatus: () => Promise<{
     cronRunFiles: number

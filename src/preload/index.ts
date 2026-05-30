@@ -193,6 +193,14 @@ const gt = {
     status: () => ipcRenderer.invoke('release:status'),
   },
   harnessStatus: () => ipcRenderer.invoke('harness:status'),
+  bg: {
+    list: () => ipcRenderer.invoke('bg:list'),
+    get: (id: string) => ipcRenderer.invoke('bg:get', id),
+    log: (id: string) => ipcRenderer.invoke('bg:log', id),
+    spawn: (input: { repoRoot: string; prompt: string; engine?: 'claude' | 'codex'; model?: string }) =>
+      ipcRenderer.invoke('bg:spawn', input),
+    cancel: (id: string) => ipcRenderer.invoke('bg:cancel', id),
+  },
   observability: {
     summary: (range: string = 'today') => ipcRenderer.invoke('observability:summary', range),
     byAgent: (range: string = 'week') => ipcRenderer.invoke('observability:byAgent', range),

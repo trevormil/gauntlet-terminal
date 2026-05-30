@@ -102,6 +102,15 @@ import { summaryFor, agentROI, dailySpend, listAIRuns, type Range } from './ai-r
 import { startAICollectionLoop } from './ai-collectors'
 import { knownModels } from './ai-pricing'
 import { startMenuBar } from './tray'
+import {
+  spawnBgTask,
+  listBgTasks,
+  getBgTask,
+  cancelBgTask,
+  readBgTaskLog,
+  startBgWatcher,
+  type BgTask,
+} from './bg-tasks'
 import { readHitl, fileHitl, resolveHitl, removeHitl, type HitlItem } from './hitl'
 import { factoryHealth } from './factory-health'
 import { describeSpec, nextRun, type ScheduleSpec } from './cron'
@@ -816,6 +825,17 @@ ipcMain.handle('release:tail', () => {
 // Harness self-status. Meta-observability snapshot so the operator can see
 // how the harness itself is doing without ls-ing config dirs. Cheap: one
 // directory listing + the in-memory run map.
+// Background tasks IPCs. /bg <prompt> fires a detached run.
+ipcMain.handle('bg:list', () => listBgTasks())
+ipcMain.handle('bg:get', (_e, id: string) => getBgTask(id))
+ipcMain.handle('bg:log', (_e, id: string) => readBgTaskLog(id))
+ipcMain.handle(
+  'bg:spawn',
+  (_e, input: { repoRoot: string; prompt: string; engine?: 'claude' | 'codex'; model?: string }) =>
+    spawnBgTask(input),
+)
+ipcMain.handle('bg:cancel', (_e, id: string) => cancelBgTask(id))
+
 // AI fleet observability IPCs. Pull from the per-run AI ledger.
 ipcMain.handle('observability:summary', (_e, range: Range = 'today') => summaryFor(range))
 ipcMain.handle('observability:byAgent', (_e, range: Range = 'week') => agentROI(range))
@@ -929,6 +949,9 @@ app.whenReady().then(() => {
   startAICollectionLoop()
   // Menu-bar fleet status (NSStatusItem). 5s poll of HITL/runs/spend.
   startMenuBar()
+  // Background-task watcher (#0004) — reconciles bg-tasks.json state with
+  // actual PIDs, sweeps completed tasks, fires Telegram pings on MR ready.
+  startBgWatcher()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
