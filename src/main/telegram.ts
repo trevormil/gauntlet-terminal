@@ -1,12 +1,19 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { telegramControlEnabled, readSettings } from './settings'
-import { readAgents, runAgent, listRuns, cancelRun } from './agents'
+import { readAgents, runAgent, listRuns, cancelRun, readAgentState, resetAgentState } from './agents'
 import { readPersonas } from './personas'
 import { parseCommand, classifyRunArgs, parsePollLine } from './telegram-parse'
 import { sendUrl, getUpdatesUrl, parseUpdates } from './telegram-api'
+import { listTickets, createTicket, updateTicket, getTicket } from './backlog'
+import { readHitl, resolveHitl } from './hitl'
+import { readSchedules } from './schedules'
+import { listDisabled, setDisabled, setAllDisabled } from './agents-disabled'
+import { listMrs, getMr } from './mrs'
+import { readCronRuns } from './cron-runs'
+import { readActivity } from './events'
 
 // Two-way AFK control over Telegram: the user texts the bot from their phone to
 // launch/cancel/inspect agent runs. The single authorized chat_id is the auth
@@ -47,10 +54,41 @@ type RepoCtx = { label: string; repoRoot: string }
 let getRepos: () => RepoCtx[] = () => []
 let getActive: () => RepoCtx | null = () => null
 
+// /cd <repo> sticks across commands so the user can text /tickets and have it
+// resolve without re-passing @repo every time. Single authorized chat_id means
+// "per-chat" === "the user's selection." Module-level is fine.
+let stickyRepo: RepoCtx | null = null
+
 /** Wire in how to enumerate target repos (from the terminal's open sessions). */
 export function configureTelegramControl(opts: { repos: () => RepoCtx[]; active: () => RepoCtx | null }) {
   getRepos = opts.repos
   getActive = opts.active
+}
+
+// Repos KNOWN to the harness but not necessarily open right now. We combine
+// open sessions with whatever appears in schedules.json (every scheduled job
+// has a repoRoot) and recent cron-run records. Lets the user text /tickets
+// @vellum-project even when they don't have a session open on it.
+function knownRepos(): RepoCtx[] {
+  const map = new Map<string, RepoCtx>()
+  for (const r of getRepos()) map.set(r.repoRoot, r)
+  for (const s of readSchedules(Date.now())) {
+    if (s.repoRoot && !map.has(s.repoRoot)) {
+      map.set(s.repoRoot, { repoRoot: s.repoRoot, label: s.repoLabel || basename(s.repoRoot) })
+    }
+  }
+  // CronRun stores worktree, not repoRoot — derive the repo path from the
+  // worktree path (~/.config/TerMinal/cron-worktrees/<basename>/<branch>/).
+  // We can't get the source root from that, so cron-only-known repos appear
+  // as labels but won't resolve for filesystem ops. Skip them silently when
+  // we can't backfill.
+  for (const r of readCronRuns(undefined, 200)) {
+    const label = r.repoLabel || ''
+    if (!label) continue
+    const matchedOpen = getRepos().find((x) => x.label === label || basename(x.repoRoot) === label)
+    if (matchedOpen && !map.has(matchedOpen.repoRoot)) map.set(matchedOpen.repoRoot, matchedOpen)
+  }
+  return [...map.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
 
 /** Send a message — native Bot API when configured, else the legacy script. */
@@ -101,12 +139,12 @@ export async function markTelegramControlEnabled(on: boolean, announce = true) {
 let lastRunIds: string[] = [] // for /cancel <n> indexed off the last /runs
 
 function resolveRepo(token?: string): RepoCtx | null {
-  const repos = getRepos()
+  const repos = knownRepos()
   if (token) {
     const t = token.replace(/^@/, '').toLowerCase()
     return repos.find((r) => r.label.toLowerCase().includes(t)) || null
   }
-  return getActive() || repos[0] || null
+  return stickyRepo || getActive() || repos[0] || null
 }
 
 const short = (root: string) => root.split('/').pop() || root
@@ -116,26 +154,56 @@ function cmdHelp() {
     [
       '🤖 TerMinal — AFK control',
       '',
-      '/runs — active + recent runs',
-      '/run <agent> [codex|claude] [persona] [pipeline] [@repo]',
-      '/agents [@repo] — list agents for a repo',
-      '/repos — open repos (run targets)',
-      '/cancel <n> — cancel run #n from /runs',
-      '/status — overview',
+      'REPOS',
+      '/repos · /cd <repo>',
+      '',
+      'RUNS · AGENTS',
+      '/runs · /run <agent> [codex|claude] [persona] [pipeline] [@repo] · /cancel <n>',
+      '/agents [@repo] · /state <agent> [@repo] · /reset-state <agent> [@repo]',
+      '',
+      'TICKETS',
+      '/tickets [@repo] · /ticket <slug> · /ticket new <title>',
+      '/close <slug>',
+      '',
+      'SCHEDULES',
+      '/schedules · /pause <id|all> · /resume <id|all> · /runnow <id>',
+      '',
+      'HITL',
+      '/hitl · /resolve <n> · /reopen <n>',
+      '',
+      'MRS · ACTIVITY · HARNESS',
+      '/mrs [@repo] · /mr <iid> · /activity [N] · /harness · /status',
     ].join('\n'),
   )
 }
 
 function cmdRepos() {
-  const repos = getRepos()
-  if (!repos.length) return reply('No open sessions — open one in the terminal first.')
-  const active = getActive()
+  const repos = knownRepos()
+  if (!repos.length) return reply('No repos known yet — open a session or create a schedule.')
+  const active = stickyRepo || getActive()
+  const open = new Set(getRepos().map((r) => r.repoRoot))
   reply(
     'Repos:\n' +
       repos
-        .map((r) => `• ${r.label}${active && r.repoRoot === active.repoRoot ? ' (active)' : ''}`)
+        .map(
+          (r) =>
+            `• ${r.label}${active && r.repoRoot === active.repoRoot ? ' (active)' : ''}` +
+            `${open.has(r.repoRoot) ? '' : ' [closed]'}`,
+        )
         .join('\n'),
   )
+}
+
+function cmdCd(args: string[]) {
+  if (!args[0]) {
+    if (!stickyRepo) return reply('No sticky repo. Usage: /cd <repo-name>')
+    stickyRepo = null
+    return reply('Cleared sticky repo.')
+  }
+  const r = resolveRepo(args[0])
+  if (!r) return reply(`No repo matches "${args[0]}". /repos to list.`)
+  stickyRepo = r
+  reply(`📂 sticky repo → ${r.label}`)
 }
 
 function cmdAgents(repoToken?: string) {
@@ -189,6 +257,277 @@ function cmdRun(args: string[]) {
   )
 }
 
+// --- tickets ---------------------------------------------------------------
+
+let lastTicketSlugs: string[] = []
+
+function cmdTickets(repoToken?: string) {
+  const repo = resolveRepo(repoToken)
+  if (!repo) return reply('No repo — /repos to list.')
+  const list = listTickets(repo.repoRoot).filter((t) => t.status !== 'closed').slice(0, 12)
+  if (!list.length) return reply(`No open tickets · ${repo.label}.`)
+  lastTicketSlugs = list.map((t) => t.slug)
+  reply(
+    `Tickets · ${repo.label}:\n` +
+      list
+        .map(
+          (t, i) =>
+            `${i + 1}. #${t.id} ${t.title}` +
+            ` · ${t.status}${t.priority ? ` · ${t.priority}` : ''}`,
+        )
+        .join('\n'),
+  )
+}
+
+function cmdTicket(args: string[]) {
+  if (!args.length) return reply('Usage: /ticket <slug> · /ticket new <title>')
+  // /ticket new <title…>
+  if (args[0].toLowerCase() === 'new') {
+    const title = args.slice(1).join(' ').trim()
+    if (!title) return reply('Usage: /ticket new <title>')
+    const repo = resolveRepo()
+    if (!repo) return reply('No repo — /repos to list.')
+    const t = createTicket(repo.repoRoot, {
+      title,
+      status: 'open',
+      priority: 'medium',
+      type: 'feature',
+      body: '',
+    })
+    return reply(`✅ Filed #${t.id} · ${t.title} (${t.slug}) on ${repo.label}`)
+  }
+  // /ticket <slug> | <n from /tickets>
+  const repo = resolveRepo()
+  if (!repo) return reply('No repo — /repos to list.')
+  let slug = args[0]
+  const n = parseInt(slug, 10)
+  if (n && lastTicketSlugs[n - 1]) slug = lastTicketSlugs[n - 1]
+  const t = getTicket(repo.repoRoot, slug)
+  if (!t) return reply(`No ticket "${slug}" on ${repo.label}.`)
+  reply(
+    [
+      `#${t.id} · ${t.title}`,
+      `status: ${t.status} · priority: ${t.priority} · type: ${t.type}`,
+      t.body ? `\n${t.body.slice(0, 600)}${t.body.length > 600 ? '\n…' : ''}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  )
+}
+
+function cmdClose(args: string[]) {
+  if (!args[0]) return reply('Usage: /close <slug|n>')
+  const repo = resolveRepo()
+  if (!repo) return reply('No repo — /repos to list.')
+  let slug = args[0]
+  const n = parseInt(slug, 10)
+  if (n && lastTicketSlugs[n - 1]) slug = lastTicketSlugs[n - 1]
+  const ok = updateTicket(repo.repoRoot, slug, { status: 'closed' })
+  if (!ok) return reply(`No ticket "${slug}".`)
+  const t = getTicket(repo.repoRoot, slug)
+  reply(`☑️ Closed${t ? ` #${t.id} · ${t.title}` : ` ${slug}`}`)
+}
+
+// --- schedules -------------------------------------------------------------
+
+function cmdSchedules() {
+  const list = readSchedules(Date.now()).slice(0, 14)
+  if (!list.length) return reply('No schedules.')
+  const disabled = new Set(listDisabled())
+  reply(
+    'Schedules:\n' +
+      list
+        .map(
+          (s, i) =>
+            `${i + 1}. ${s.agentTitle} · ${s.repoLabel}` +
+            `${disabled.has(s.id) ? ' [paused]' : ''}` +
+            `${s.lastStatus && s.lastStatus !== 'never' ? ` · ${s.lastStatus}` : ''}`,
+        )
+        .join('\n') +
+      `\n\n/pause <id|n|all> · /resume <id|n|all> · /runnow <id|n>`,
+  )
+}
+
+let lastScheduleIds: string[] = []
+
+function scheduleIdFromToken(tok: string): string | null {
+  // Accept either the full schedule id, an "n" index from the last /schedules,
+  // or a partial-id prefix.
+  const all = readSchedules(Date.now())
+  lastScheduleIds = all.map((s) => s.id)
+  const n = parseInt(tok, 10)
+  if (n && all[n - 1]) return all[n - 1].id
+  const exact = all.find((s) => s.id === tok)
+  if (exact) return exact.id
+  const prefix = all.find((s) => s.id.startsWith(tok))
+  return prefix ? prefix.id : null
+}
+
+function cmdPause(args: string[], pause: boolean) {
+  if (!args[0]) return reply(`Usage: /${pause ? 'pause' : 'resume'} <id|n|all>`)
+  const all = readSchedules(Date.now())
+  if (args[0].toLowerCase() === 'all') {
+    setAllDisabled(all.map((s) => s.id), pause)
+    return reply(`${pause ? '⏸' : '▶️'} ${pause ? 'paused' : 'resumed'} ${all.length} schedule(s).`)
+  }
+  const id = scheduleIdFromToken(args[0])
+  if (!id) return reply('Unknown schedule — /schedules to list.')
+  setDisabled(id, pause)
+  const s = all.find((x) => x.id === id)
+  reply(`${pause ? '⏸' : '▶️'} ${pause ? 'paused' : 'resumed'} · ${s?.agentTitle || id}`)
+}
+
+function cmdRunNow(args: string[]) {
+  if (!args[0]) return reply('Usage: /runnow <id|n>')
+  const id = scheduleIdFromToken(args[0])
+  if (!id) return reply('Unknown schedule — /schedules to list.')
+  const s = readSchedules(Date.now()).find((x) => x.id === id)
+  if (!s) return reply('Schedule disappeared mid-call.')
+  // Cron schedule's "run now" is just an in-process spawn of the same agent
+  // against the same repoRoot. Bypasses the launchd cadence; runs immediately.
+  const r = runAgent(s.repoRoot, s.agentId, s.engine)
+  if ('error' in r) return reply(`⛔ ${r.error}`)
+  reply(`▶️ Triggered ${s.agentTitle} · ${s.repoLabel}`)
+}
+
+// --- HITL ------------------------------------------------------------------
+
+let lastHitlIds: string[] = []
+
+function cmdHitl() {
+  const open = readHitl().filter((h) => h.status === 'open').slice(0, 10)
+  if (!open.length) return reply('🟢 No open HITL items.')
+  lastHitlIds = open.map((h) => h.id)
+  reply(
+    'HITL · open:\n' +
+      open
+        .map(
+          (h, i) =>
+            `${i + 1}. ${h.title}` +
+            (h.repo ? ` · ${h.repo}` : '') +
+            (h.action ? `\n   → ${h.action}` : ''),
+        )
+        .join('\n'),
+  )
+}
+
+function cmdResolveHitl(args: string[], resolved: boolean) {
+  const n = parseInt(args[0] || '', 10)
+  if (!n || n < 1) return reply(`Usage: /${resolved ? 'resolve' : 'reopen'} <n> (from /hitl)`)
+  const id = lastHitlIds[n - 1]
+  if (!id) return reply('No such #n — send /hitl first.')
+  resolveHitl(id, resolved)
+  reply(`${resolved ? '☑️ Resolved' : '↺ Reopened'} HITL #${n}.`)
+}
+
+// --- MRs -------------------------------------------------------------------
+
+async function cmdMrs(repoToken?: string) {
+  const repo = resolveRepo(repoToken)
+  if (!repo) return reply('No repo — /repos to list.')
+  const r = await listMrs(repo.repoRoot)
+  if (r.error) return reply(`⛔ ${r.error}`)
+  const open = r.mrs.filter((m) => m.state === 'opened').slice(0, 12)
+  if (!open.length) return reply(`No open MRs · ${repo.label}.`)
+  reply(
+    `MRs · ${repo.label}:\n` +
+      open.map((m) => `• !${m.iid} ${m.title}${m.draft ? ' [draft]' : ''}`).join('\n'),
+  )
+}
+
+async function cmdMr(args: string[]) {
+  const iid = parseInt(args[0] || '', 10)
+  if (!iid) return reply('Usage: /mr <iid>')
+  const repo = resolveRepo(args[1])
+  if (!repo) return reply('No repo — /repos to list.')
+  const d = await getMr(repo.repoRoot, iid)
+  if (!d) return reply(`No MR !${iid} on ${repo.label}.`)
+  reply(
+    [
+      `!${d.iid} · ${d.title}`,
+      `state: ${d.state}${d.draft ? ' (draft)' : ''} · ${d.sourceBranch} → ${d.targetBranch || 'main'}`,
+      d.webUrl,
+    ].join('\n'),
+  )
+}
+
+// --- agent state -----------------------------------------------------------
+
+function cmdState(args: string[]) {
+  const agentId = args[0]
+  if (!agentId) return reply('Usage: /state <agent> [@repo]')
+  const repo = resolveRepo(args[1])
+  if (!repo) return reply('No repo — /repos to list.')
+  const s = readAgentState(repo.repoRoot, agentId)
+  if (!s.exists)
+    return reply(`No state for ${agentId} · ${repo.label}. (First run hasn't written yet.)`)
+  const at = typeof s.state.lastRunAt === 'number' ? new Date(s.state.lastRunAt).toLocaleString() : '?'
+  reply(
+    [
+      `state · ${agentId} · ${repo.label}`,
+      `last sha: ${(s.state.lastScannedSha as string)?.slice(0, 12) || '—'}` +
+        `${s.state.lastScannedRef ? ` (${s.state.lastScannedRef})` : ''}`,
+      `last at: ${at}`,
+    ].join('\n'),
+  )
+}
+
+function cmdResetState(args: string[]) {
+  const agentId = args[0]
+  if (!agentId) return reply('Usage: /reset-state <agent> [@repo]')
+  const repo = resolveRepo(args[1])
+  if (!repo) return reply('No repo — /repos to list.')
+  const r = resetAgentState(repo.repoRoot, agentId)
+  if ('error' in r) return reply(`⛔ ${r.error}`)
+  reply(`🧹 Reset state · ${agentId} · ${repo.label}.`)
+}
+
+// --- harness + activity ----------------------------------------------------
+
+function cmdHarness() {
+  const cfgDir = join(homedir(), '.config', 'TerMinal')
+  let cronRunFiles = 0
+  const cronRunsDir = join(cfgDir, 'cron-runs')
+  try {
+    if (existsSync(cronRunsDir))
+      cronRunFiles = readdirSync(cronRunsDir).filter((f) => f.endsWith('.json')).length
+  } catch {
+    /* ignore */
+  }
+  const cronRuns = readCronRuns(undefined, 1000)
+  const running = cronRuns.filter((r) => r.status === 'running').length
+  const failed24h = cronRuns.filter(
+    (r) => r.status === 'failed' && r.startedAt >= Date.now() - 86_400_000,
+  ).length
+  const paused = listDisabled().length
+  const inProc = listRuns().filter((r) => r.status === 'running').length
+  reply(
+    [
+      '🩺 Harness',
+      `running: ${running} cron · ${inProc} in-proc`,
+      `failed (24h): ${failed24h}`,
+      `paused schedules: ${paused}`,
+      `cron records: ${cronRunFiles}`,
+    ].join('\n'),
+  )
+}
+
+function cmdActivity(args: string[]) {
+  const n = Math.max(1, Math.min(20, parseInt(args[0] || '', 10) || 8))
+  const evs = readActivity(n)
+  if (!evs.length) return reply('No activity yet.')
+  reply(
+    `Recent activity (${evs.length}):\n` +
+      evs
+        .map((e) => {
+          const ago = Math.floor((Date.now() - e.ts) / 60_000)
+          const when = ago < 1 ? 'just now' : ago < 60 ? `${ago}m` : `${Math.floor(ago / 60)}h`
+          return `• ${e.kind} · ${e.title}${e.repo ? ` · ${e.repo}` : ''} (${when})`
+        })
+        .join('\n'),
+  )
+}
+
 function cmdCancel(args: string[]) {
   const n = parseInt(args[0] || '', 10)
   if (!n || n < 1) return reply('Usage: /cancel <n> (the number from /runs)')
@@ -205,6 +544,8 @@ function handle(text: string) {
       return cmdHelp()
     case '/repos':
       return cmdRepos()
+    case '/cd':
+      return cmdCd(args)
     case '/agents':
       return cmdAgents(args[0])
     case '/runs':
@@ -215,6 +556,40 @@ function handle(text: string) {
       return cmdCancel(args)
     case '/status':
       return cmdStatus()
+    case '/tickets':
+      return cmdTickets(args[0])
+    case '/ticket':
+      return cmdTicket(args)
+    case '/close':
+      return cmdClose(args)
+    case '/schedules':
+      return cmdSchedules()
+    case '/pause':
+      return cmdPause(args, true)
+    case '/resume':
+      return cmdPause(args, false)
+    case '/runnow':
+      return cmdRunNow(args)
+    case '/hitl':
+      return cmdHitl()
+    case '/resolve':
+      return cmdResolveHitl(args, true)
+    case '/reopen':
+      return cmdResolveHitl(args, false)
+    case '/mrs':
+    case '/prs':
+      return cmdMrs(args[0])
+    case '/mr':
+    case '/pr':
+      return cmdMr(args)
+    case '/state':
+      return cmdState(args)
+    case '/reset-state':
+      return cmdResetState(args)
+    case '/harness':
+      return cmdHarness()
+    case '/activity':
+      return cmdActivity(args)
     default:
       return reply(`Unknown command ${cmd}. Send /help.`)
   }

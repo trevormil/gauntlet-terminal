@@ -529,6 +529,31 @@ export function SettingsPanel({ onClose, onRerunSetup }: { onClose: () => void; 
                   {tg.ok ? '✓ Sent — check your chat.' : tg.error}
                 </div>
               )}
+              {s.telegram.control && (
+                <details className="mt-1 rounded-md border border-[var(--gt-border)] bg-black/20 px-2.5 py-1.5">
+                  <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200">
+                    Command reference (send /help in the chat)
+                  </summary>
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[10.5px] text-zinc-500">
+                    <span>/repos · /cd &lt;repo&gt;</span>
+                    <span>/runs · /cancel &lt;n&gt;</span>
+                    <span>/agents [@repo]</span>
+                    <span>/run &lt;agent&gt; [opts]</span>
+                    <span>/tickets [@repo]</span>
+                    <span>/ticket &lt;slug|n&gt;</span>
+                    <span>/ticket new &lt;title&gt;</span>
+                    <span>/close &lt;slug|n&gt;</span>
+                    <span>/schedules</span>
+                    <span>/pause · /resume</span>
+                    <span>/runnow &lt;id|n&gt;</span>
+                    <span>/hitl · /resolve &lt;n&gt;</span>
+                    <span>/mrs [@repo] · /mr &lt;iid&gt;</span>
+                    <span>/state &lt;agent&gt;</span>
+                    <span>/reset-state &lt;agent&gt;</span>
+                    <span>/harness · /activity</span>
+                  </div>
+                </details>
+              )}
             </div>
           </Section>
 
