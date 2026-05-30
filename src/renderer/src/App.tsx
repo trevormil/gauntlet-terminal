@@ -178,6 +178,14 @@ export default function App() {
     }
     for (const s of ws.sessions) window.gt.stopSession(s.key)
     setSessions((prev) => prev.filter((x) => cwdOf(x) !== root))
+    // Push to recents so it shows up on the EntryScreen for one-click reopen.
+    try {
+      const prev = (JSON.parse(localStorage.getItem('gt.recentWorkspaces') || '[]') as string[])
+        .filter((x) => typeof x === 'string' && x !== root)
+      localStorage.setItem('gt.recentWorkspaces', JSON.stringify([root, ...prev].slice(0, 8)))
+    } catch {
+      /* localStorage glitch — best effort */
+    }
     if (activeWorkspaceRoot === root) {
       const fallback = sessions.find((x) => cwdOf(x) !== root)?.key ?? null
       if (fallback) activate(fallback)

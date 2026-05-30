@@ -26,6 +26,88 @@ function load<T>(key: string, fallback: T): T {
 
 export type Info = { sessionId: string; cwd: string }
 
+// Banner shown at the top of a session when the repo lacks .agents/ — gives
+// a one-click way to run project-template/bootstrap.sh against it. Dismissed
+// state is per-repo + persisted; the banner doesn't come back for a repo the
+// user explicitly dismissed.
+function BootstrapBanner({ repoRoot, active }: { repoRoot: string; active: boolean }) {
+  const [state, setState] = useState<'unknown' | 'needed' | 'ok' | 'running' | 'done' | 'error'>(
+    'unknown',
+  )
+  const [error, setError] = useState('')
+  const dismissedKey = `gt.bootstrapDismissed.${repoRoot}`
+  const dismissed = (() => {
+    try {
+      return localStorage.getItem(dismissedKey) === '1'
+    } catch {
+      return false
+    }
+  })()
+  useEffect(() => {
+    if (!active || !repoRoot || dismissed) return
+    let cancelled = false
+    window.gt.workspace.isBootstrapped(repoRoot).then((r) => {
+      if (cancelled) return
+      setState(r.bootstrapped ? 'ok' : 'needed')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [active, repoRoot, dismissed])
+  if (dismissed || state === 'unknown' || state === 'ok') return null
+  const run = async () => {
+    setState('running')
+    const r = await window.gt.workspace.bootstrap(repoRoot)
+    if ('error' in r) {
+      setError(r.error)
+      setState('error')
+    } else {
+      setState('done')
+    }
+  }
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-[var(--gt-accent)]/40 bg-[var(--gt-accent)]/10 px-3 py-1.5 text-[11px] text-zinc-200">
+      <span className="text-[14px]">🛠</span>
+      {state === 'done' ? (
+        <span className="flex-1">Bootstrapped — reload tabs to pick up .agents/ + skills.</span>
+      ) : state === 'running' ? (
+        <span className="flex-1">Running bootstrap.sh…</span>
+      ) : state === 'error' ? (
+        <span className="flex-1 text-[var(--gt-red)]">Bootstrap failed: {error}</span>
+      ) : (
+        <span className="flex-1">
+          This repo isn't bootstrapped with project-template — agents/skills/backlog/docs are
+          missing.
+        </span>
+      )}
+      <div className="flex items-center gap-1">
+        {state === 'needed' && (
+          <button
+            onClick={run}
+            className="rounded-md border border-[var(--gt-accent)]/60 bg-[var(--gt-accent)]/20 px-2 py-0.5 text-[11px] font-semibold text-zinc-100 hover:bg-[var(--gt-accent)]/30"
+          >
+            Bootstrap
+          </button>
+        )}
+        <button
+          onClick={() => {
+            try {
+              localStorage.setItem(dismissedKey, '1')
+            } catch {
+              /* ignore */
+            }
+            setState('ok') // hide
+          }}
+          title="Don't show this again for this repo"
+          className="rounded-md p-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+        >
+          <X size={11} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /**
  * One Claude session: its terminal (always mounted so the PTY/scrollback
  * survives backgrounding), cockpit, and view-tabs. Only the `active` session
@@ -208,6 +290,7 @@ export function SessionView({
 
   return (
     <div className="flex h-full flex-col">
+      <BootstrapBanner repoRoot={info.cwd || choice.cwd || ''} active={active} />
       <header className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--gt-border)] bg-[var(--gt-bg)] px-2 text-zinc-300">
         <div className="flex items-center gap-0.5">
           {tabPill('terminal', SquareTerminal, 'Terminal')}
@@ -223,6 +306,23 @@ export function SessionView({
             {branch}
           </span>
         )}
+        {/* Worktree indicator. Sessions inside .worktrees/ or cron-worktrees/
+            are operating on a throwaway checkout — surface that so it's
+            obvious the user isn't on their main repo path. */}
+        {(() => {
+          const cwd = info.cwd || choice.cwd || ''
+          if (!cwd) return null
+          const wt = /\/\.worktrees\/|\/cron-worktrees\//.test(cwd)
+          if (!wt) return null
+          return (
+            <span
+              title={cwd}
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--gt-yellow)]/40 bg-[var(--gt-yellow)]/10 px-1.5 py-px text-[10px] font-medium text-[var(--gt-yellow)]"
+            >
+              🌿 worktree
+            </span>
+          )
+        })()}
         {onTerminal && (
           <>
             <button

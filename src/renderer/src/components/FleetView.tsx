@@ -52,8 +52,31 @@ export function FleetView({
             No sessions.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 2xl:grid-cols-3">
-            {sessions.map((s) => {
+          // Group by repo so the Fleet view matches the workspace mental
+          // model — one card group per project, sessions inside.
+          (() => {
+            const byRepo = new Map<string, FleetSession[]>()
+            for (const s of sessions) {
+              const r = s.repo || '(no repo)'
+              if (!byRepo.has(r)) byRepo.set(r, [])
+              byRepo.get(r)!.push(s)
+            }
+            const groups = [...byRepo.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+            return (
+              <div className="space-y-5">
+                {groups.map(([repo, list]) => (
+                  <div key={repo}>
+                    <div className="mb-2 flex items-baseline gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-400">
+                        {repo.replace(/\/$/, '').split('/').pop() || repo}
+                      </span>
+                      <span className="text-[10px] tabular-nums text-zinc-600">
+                        {list.length} session{list.length === 1 ? '' : 's'}
+                      </span>
+                      <span className="font-mono text-[10px] text-zinc-700">{repo}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 2xl:grid-cols-3">
+                      {list.map((s) => {
               const on = s.key === activeKey
               const wk = s.status === 'working'
               return (
@@ -120,7 +143,12 @@ export function FleetView({
                 </button>
               )
             })}
-          </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()
         )}
       </div>
     </div>

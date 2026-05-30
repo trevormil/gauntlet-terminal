@@ -114,6 +114,40 @@ export function EntryScreen({
           )}
         </p>
 
+        {/* Recently closed workspaces. Click to re-open as a fresh session on
+            that repo. Only shown for the "+ workspace" flow — inside a locked
+            workspace the recents are irrelevant. */}
+        {!lockedCwd &&
+          (() => {
+            let recents: string[] = []
+            try {
+              recents = JSON.parse(localStorage.getItem('gt.recentWorkspaces') || '[]')
+            } catch {
+              /* ignore */
+            }
+            recents = recents.filter((x) => typeof x === 'string').slice(0, 6)
+            if (!recents.length) return null
+            return (
+              <div className="mb-4">
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                  Recent
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {recents.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => onChoose({ mode: 'new', cwd: r })}
+                      title={r}
+                      className="rounded-lg border border-[var(--gt-border)] bg-[var(--gt-panel)] px-2.5 py-1 text-[12px] text-zinc-300 transition-colors hover:border-[var(--gt-accent)]/60"
+                    >
+                      {r.replace(/\/$/, '').split('/').pop() || r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
         {/* quick-pick directories — hidden when the cwd is locked (we're adding
             a session inside an existing workspace, the repo is already fixed) */}
         {!lockedCwd && dirs.length > 0 && (

@@ -701,6 +701,35 @@ ipcMain.handle('open:external', (_e, url: string) => shell.openExternal(url))
 // schedules.json, settings.json, or per-(repo, agent) state sidecars by hand.
 ipcMain.handle('open:config-dir', () => shell.openPath(join(homedir(), '.config', 'TerMinal')))
 
+// Workspace bootstrap helpers.
+// "Bootstrapped" === the project-template machinery is present in the repo
+// (we check .agents/ as a low-effort proxy — the other dirs come together
+// with it). Used by the in-session banner.
+ipcMain.handle('workspace:is-bootstrapped', (_e, repoRoot: string) => {
+  if (!repoRoot) return { bootstrapped: true }
+  return { bootstrapped: existsSync(join(repoRoot, '.agents')) }
+})
+// Run project-template/bootstrap.sh against a repo. The script is idempotent
+// and skips clobbering existing files (it writes `<name>.workflow` sidecars
+// for conflicts). Streams nothing — we just wait and return ok/error.
+ipcMain.handle('workspace:bootstrap', async (_e, repoRoot: string) => {
+  if (!repoRoot) return { error: 'no repoRoot' }
+  const templateRoot = join(homedir(), 'CompSci', 'gauntlet', 'project-template')
+  const script = join(templateRoot, 'bootstrap.sh')
+  if (!existsSync(script))
+    return { error: `bootstrap.sh not found at ${script} — check project-template checkout` }
+  return new Promise<{ ok: true } | { error: string }>((resolve) => {
+    const p = cpSpawn('bash', [script, repoRoot], { stdio: 'pipe' })
+    let stderr = ''
+    p.stderr.on('data', (d) => (stderr += d.toString()))
+    p.on('exit', (code) => {
+      if (code === 0) resolve({ ok: true })
+      else resolve({ error: `bootstrap exited ${code}${stderr ? `: ${stderr.slice(0, 200)}` : ''}` })
+    })
+    p.on('error', (e) => resolve({ error: e.message }))
+  })
+})
+
 // In-app rebuild. Spawns bin/release fully detached and routes its output to
 // a log file the renderer can tail. The release script kills the running
 // TerMinal mid-flow (so it can replace /Applications/TerMinal.app); the

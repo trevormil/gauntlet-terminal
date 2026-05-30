@@ -601,6 +601,10 @@ export type GtApi = {
   openInBrowser: (url: string) => Promise<void>
   openInEditor: (path?: string) => Promise<void>
   openConfigDir: () => Promise<string>
+  workspace: {
+    isBootstrapped: (repoRoot: string) => Promise<{ bootstrapped: boolean }>
+    bootstrap: (repoRoot: string) => Promise<{ ok: true } | { error: string }>
+  }
   release: {
     start: () => Promise<{ ok: true; pid: number | null; log: string; repoRoot: string } | { error: string }>
     tail: () => Promise<string>
