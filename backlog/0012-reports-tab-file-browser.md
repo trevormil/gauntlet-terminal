@@ -1,7 +1,7 @@
 ---
 id: 12
 title: "Reports tab: browse repo reports/ directories + view .md files inline"
-status: open
+status: closed
 priority: low
 horizon: now
 hitl: false

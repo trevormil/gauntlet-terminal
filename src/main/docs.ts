@@ -57,13 +57,16 @@ function categorize(rel: string): DocCategory {
   if (norm.startsWith('docs/developer/')) return 'developer'
   if (norm.startsWith('docs/personal/')) return 'personal'
   if (norm.startsWith('reports/')) return 'reports'
+  if (norm.startsWith('checks/')) return 'reports' // checks/ surfaces alongside reports/
   return 'other'
 }
 
 function reportSubgroup(rel: string): string | undefined {
   const parts = rel.split(sep).join('/').split('/')
   // reports/<kind>/<file>.md → "<kind>"
-  return parts.length >= 3 && parts[0] === 'reports' ? parts[1] : undefined
+  // checks/<kind>/<file>.md  → "<kind>"
+  if (parts.length >= 3 && (parts[0] === 'reports' || parts[0] === 'checks')) return parts[1]
+  return undefined
 }
 
 function walk(root: string, dir: string, out: string[]): void {
@@ -95,6 +98,8 @@ export function listDocs(repoRoot: string): DocsTree {
   if (existsSync(docsDir) && statSync(docsDir).isDirectory()) walk(repoRoot, docsDir, paths)
   const reportsDir = join(repoRoot, 'reports')
   if (existsSync(reportsDir) && statSync(reportsDir).isDirectory()) walk(repoRoot, reportsDir, paths)
+  const checksDir = join(repoRoot, 'checks')
+  if (existsSync(checksDir) && statSync(checksDir).isDirectory()) walk(repoRoot, checksDir, paths)
   const changelog = join(repoRoot, 'CHANGELOG.md')
   if (existsSync(changelog)) paths.push('CHANGELOG.md')
 
