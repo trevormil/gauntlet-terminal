@@ -19,14 +19,20 @@ const underDir = (sessionCwd: string, dir: string) =>
 export function EntryScreen({
   onChoose,
   onCancel,
+  lockedCwd,
 }: {
   onChoose: (c: Choice) => void
   onCancel?: () => void
+  /** When set, the EntryScreen is being opened inside an existing workspace to
+   *  add a session — the repo is fixed, so the cwd picker and the scaffold/
+   *  project-browser sections are hidden. Resume listing is auto-filtered to
+   *  this repo. */
+  lockedCwd?: string
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null)
   const [dirs, setDirs] = useState<{ name: string; path: string }[]>([])
-  const [cwd, setCwd] = useState('') // new-session target
-  const [filterDir, setFilterDir] = useState('') // resume filter ('' = all)
+  const [cwd, setCwd] = useState(lockedCwd || '') // new-session target
+  const [filterDir, setFilterDir] = useState(lockedCwd || '') // resume filter ('' = all)
   const [name, setName] = useState('')
   // "new project from template" scaffold form
   const [projName, setProjName] = useState('')
@@ -94,12 +100,23 @@ export function EntryScreen({
           )}
         </div>
         <p className="mb-6 text-sm text-zinc-500">
-          Attach to a Claude session. This window pins to it — context, usage, and telemetry all
-          track that one session.
+          {lockedCwd ? (
+            <>
+              New session in{' '}
+              <span className="font-mono text-zinc-300">{tilde(lockedCwd)}</span> — pick "Start"
+              for a fresh session or attach to a prior one below.
+            </>
+          ) : (
+            <>
+              Attach to a Claude session. This window pins to it — context, usage, and telemetry
+              all track that one session.
+            </>
+          )}
         </p>
 
-        {/* quick-pick directories */}
-        {dirs.length > 0 && (
+        {/* quick-pick directories — hidden when the cwd is locked (we're adding
+            a session inside an existing workspace, the repo is already fixed) */}
+        {!lockedCwd && dirs.length > 0 && (
           <div className="mb-4">
             <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
               Projects
@@ -128,7 +145,9 @@ export function EntryScreen({
           </div>
         )}
 
-        {/* new project from template */}
+        {/* new project from template — hidden when adding inside an existing
+            workspace (the repo is fixed) */}
+        {!lockedCwd && (
         <div className="mb-4 rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-4">
           <div className="mb-3 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-400">
             <FolderGit2 size={13} strokeWidth={2} />
@@ -172,28 +191,31 @@ export function EntryScreen({
           </div>
           {scaffoldErr && <div className="mt-1 text-[11px] text-[var(--gt-red)]">{scaffoldErr}</div>}
         </div>
+        )}
 
         {/* start new */}
         <div className="mb-6 rounded-2xl border border-[var(--gt-border)] bg-[var(--gt-panel)] p-4">
           <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-400">
             Start a new session
           </div>
-          <div className="mb-2 flex items-center gap-2">
-            <button
-              onClick={browse}
-              className={`${sel} inline-flex shrink-0 items-center gap-1.5 hover:border-[var(--gt-accent)]/60`}
-            >
-              <FolderOpen size={13} strokeWidth={2} />
-              Folder
-            </button>
-            <input
-              value={cwd}
-              onChange={(e) => setCwd(e.target.value)}
-              placeholder="~ (home)"
-              spellCheck={false}
-              className={`${sel} min-w-0 flex-1 font-mono`}
-            />
-          </div>
+          {!lockedCwd && (
+            <div className="mb-2 flex items-center gap-2">
+              <button
+                onClick={browse}
+                className={`${sel} inline-flex shrink-0 items-center gap-1.5 hover:border-[var(--gt-accent)]/60`}
+              >
+                <FolderOpen size={13} strokeWidth={2} />
+                Folder
+              </button>
+              <input
+                value={cwd}
+                onChange={(e) => setCwd(e.target.value)}
+                placeholder="~ (home)"
+                spellCheck={false}
+                className={`${sel} min-w-0 flex-1 font-mono`}
+              />
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <input
               value={name}
